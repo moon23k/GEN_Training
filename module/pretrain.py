@@ -35,7 +35,6 @@ class GenTrainer(TrainerBase):
 
 
     def train(self):
-
         records = []
         patience = self.patience
         prev_loss, best_loss = float('inf'), float('inf')
@@ -129,10 +128,9 @@ class GenTrainer(TrainerBase):
             resp_encodings = self.tokenize(resp)
 
             with torch.no_grad():
-                with torch.autocast(device_type=self.device_type, dtype=torch.float16):
-                    loss = self.model(input_ids=uttr_encodings.input_ids, 
-                                      attention_mask=uttr_encodings.attention_mask,
-                                      labels=resp_encodings.input_ids).loss
+                loss = self.model(input_ids=uttr_encodings.input_ids, 
+                                  attention_mask=uttr_encodings.attention_mask,
+                                  labels=resp_encodings.input_ids).loss
 
             epoch_loss += loss.item()
 

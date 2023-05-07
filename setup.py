@@ -44,7 +44,7 @@ def save_data(data_obj):
 def main():
     orig = load_dataset('cnn_dailymail', '3.0.0', split='train')
     
-    tokenizer = BertTokenizerFast.from_pretrained('allenai/led-base-16384')
+    tokenizer = LEDTokenizerFast.from_pretrained('allenai/led-base-16384')
     tokenizer.model_max_length = 4098
 
     processed = process_data(orig, tokenizer)    
