@@ -19,8 +19,8 @@ def process_data(orig_data, tokenizer):
         if not (min_len < len(src) < max_len):
             continue
 
-        processed.append({"input_ids": tokenizer(src).input_ids,
-                          'labels': tokenizer(trg).input_ids})
+        processed.append({"text": tokenizer(src).input_ids,
+                          "summ": tokenizer(trg).input_ids})
         
         cnt += 1
         if cnt == volumn:

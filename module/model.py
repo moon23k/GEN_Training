@@ -25,7 +25,7 @@ class Discriminator(nn.Module):
         self.dropout = nn.Dropout(self.encoder.config.hidden_dropout_prob)
         
         self.device = config.device
-        self.pad_id = conifg.pad_id
+        self.pad_id = config.pad_id
         self.criterion = nn.BCEWithLogitsLoss().to(self.device)
         self.outputs = namedtuple('Discriminator_Outputs', ('logit', 'loss'))
 

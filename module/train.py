@@ -30,26 +30,6 @@ class TrainerBase:
         return f"{elapsed_min}m {elapsed_sec}s"
 
 
-
-    def tokenize(self, tokenizer_inputs):
-        return self.tokenizer(tokenizer_inputs, 
-                              padding=True, 
-                              truncation=True, 
-                              return_tensors='pt').to(self.device)
-
-
-    def generate(self, uttr):        
-        g_encodings = self.tokenize(uttr)
-
-        with torch.autocast(device_type=self.device_type, dtype=torch.float16):
-            pred = self.g_model.generate(input_ids=g_encodings.input_ids,
-                                         attention_mask=g_encodings.attention_mask, 
-                                         max_new_tokens=self.max_len, 
-                                         use_cache=True)
-
-        return self.tokenizer.batch_decode(pred, skip_special_tokens=True)
-
-
     def collate_dis_inputs(self, uttr, resp, pred):
 
         pos_encodings = self.tokenize(uttr + resp)
@@ -98,15 +78,11 @@ class TrainerBase:
 
 
 class Trainer(TrainerBase):
-    def __init__(self, config, g_model, d_model, 
-                 tokenizer, train_dataloader, valid_dataloader):
-        
+    def __init__(self, config, g_model, d_model, train_dataloader, valid_dataloader):
         super(Trainer, self).__init__(config)
 
         self.g_model = g_model
         self.d_model = d_model
-
-        self.tokenizer = tokenizer
 
         self.train_dataloader = train_dataloader
         self.valid_dataloader = valid_dataloader
@@ -153,26 +129,62 @@ class Trainer(TrainerBase):
         return outs
 
 
-    def get_losses(self, batch):
-        uttr, resp = batch[0], batch[1]
-        batch_size = len(uttr)
-        pred = self.generate(uttr)
+    def generate(self, text, text_mask):
+        is_training = self.g_model.training()
+        
+        if is_training:
+            self.g_model.eval()
 
-        #Get Generator Loss
-        g_logit = self.discriminate(uttr, None, pred).logit
-        g_logit = F.softmax(g_logit, dim=-1)
-        g_logit = g_logit[g_logit > 0.5].sum().item() / batch_size
+        with torch.autocast(device_type=self.device.type, dtype=torch.float16):
+            pred = self.g_model.generate(input_ids=text,
+                                         attention_mask=text_mask, 
+                                         max_new_tokens=self.max_len, 
+                                         use_cache=True)    
+        
+        if is_training:
+            self.g_model.train()
+            
+        return pred
+
+
+    def get_losses(self, batch):
+
+        #Collate Batch
+        text = batch['text'].to(self.device)
+        summ = batch['summ'].to(self.device)
+        batch_size = text.size(0)
+
+
+        #Generate Pred
+        pred = self.g_model.generate(input_ids=text, 
+                                     attention_mask=(text == self.pad_id).to(self.device))
+
+
+        #manipulate discriminator_inputs
+        dis_inputs = []
+        for i in range(batch_size):
+            dis_inputs.append(torch.cat((text[i] != self.pad_id), (summ[i] != self.pad_id)))
+            dis_inputs.append(torch.cat((text[i] != self.pad_id), (pred[i] != self.pad_id)))
+        dis_inputs = pad_sequence(dis_inputs, batch_first=True, padding_value=self.pad_id)
+
+        #get g_loss
+        g_logit = self.d_model(dis_inputs[::2]).logit
+        g_loss = (g_logit.softmax >= 0.5).sum().item() / batch_size
         
         if not g_logit:
             g_logit = 1e-4
 
         g_loss = -torch.log(torch.tensor(g_logit, requires_grad=True)).to(self.device)
 
-        #Get Discriminator Loss
-        d_loss = self.discriminate(uttr, resp, pred).loss
+        #Shuffle
+        indice = torch.randperm(batch_size * 2).long()
+        labels = torch.tensor([0 if i % 2 == 0 else 1 for i in range(batch_size*2)])
+        dis_inputs = dis_inputs[indice]
+        labels = labels[indice]
 
+        d_loss = self.d_model(dis_inputs, labels).loss
+        
         return g_loss, d_loss
-
 
 
     def train(self):
@@ -243,13 +255,15 @@ class Trainer(TrainerBase):
             
             idx += 1
             g_loss, d_loss = self.get_losses(batch)
-            g_loss /= self.iters_to_accumulate
-            d_loss /= self.iters_to_accumulate
+            g_loss = g_loss / self.iters_to_accumulate
+            d_loss = d_loss / self.iters_to_accumulate
+            
 
             g_loss.backward()
             self.scaler.scale(d_loss).backward()
 
             if (idx % self.iters_to_accumulate == 0) or (idx == tot_len):
+                self.scaler.unscale_(self.g_optimizer)
                 self.scaler.unscale_(self.d_optimizer)
 
                 #Gradient Clipping
@@ -258,6 +272,9 @@ class Trainer(TrainerBase):
                 
                 #Gradient Update & Scaler Update
                 self.g_optimizer.step()
+                self.d_optimizer.step()
+                
+                self.scaler.step(self.g_optimizer)
                 self.scaler.step(self.d_optimizer)
                 
                 self.scaler.update()
@@ -268,10 +285,8 @@ class Trainer(TrainerBase):
             g_epoch_loss += g_loss.item()
             d_epoch_loss += d_loss.item()
         
-        g_epoch_loss = round(g_epoch_loss / tot_len, 3)
-        d_epoch_loss = round(d_epoch_loss / tot_len, 3)
     
-        return g_epoch_loss, d_epoch_loss
+        return round(g_epoch_loss / tot_len, 3), round(d_epoch_loss / tot_len, 3)
     
 
 
@@ -288,8 +303,6 @@ class Trainer(TrainerBase):
 
                 g_epoch_loss += g_loss.item()
                 d_epoch_loss += d_loss.item()
-    
-        g_epoch_loss = round(g_epoch_loss / tot_len, 3)
-        d_epoch_loss = round(d_epoch_loss / tot_len, 3)
 
-        return g_epoch_loss, d_epoch_loss
+
+        return round(g_epoch_loss / tot_len, 3), round(d_epoch_loss / tot_len, 3)

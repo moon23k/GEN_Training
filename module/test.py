@@ -3,15 +3,9 @@ import time, torch
 
 
 class Tester:
-    def __init__(self, config, g_model, d_model, 
-                 g_tokenizer, d_tokenizer, test_dataloader):
-
+    def __init__(self, config, g_model, d_model, test_dataloader):
         self.g_model = g_model
         self.d_model = d_model
-        
-        self.g_tokenizer = g_tokenizer
-        self.d_tokenizer = d_tokenizer
-        
         self.device = config.device
         self.max_len = config.max_len
         self.dataloader = test_dataloader
@@ -23,13 +17,6 @@ class Tester:
         elapsed_min = int(elapsed_time / 60)
         elapsed_sec = int(elapsed_time - (elapsed_min * 60))
         return f"{elapsed_min}m {elapsed_sec}s"        
-
-
-    def tokenize(self, tokenizer, tokenizer_inputs):
-        return tokenizer(tokenizer_inputs, 
-                         padding=True, 
-                         truncation=True, 
-                         return_tensors='pt').to(self.device)
 
 
     def test(self):
@@ -59,7 +46,7 @@ class Tester:
                 d_encodings = self.tokenize(self.d_tokenizer, preds)
                 d_ids = d_encodings.input_ids
                 d_masks = d_encodings.attention_mask
-                logits = self.d_model(input_ids=d_ids, attention_mask=d_masks)
+                logits = self.d_model(input_ids=d_ids, attention_mask=d_masks).logits
                 scores += logits[logits > 0.5].sum()
 
         scores = scores / len(dataloader)

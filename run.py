@@ -47,76 +47,75 @@ class Config(object):
 
 
 
-def generate(model, dataloader, split):
+def generate(config, model, dataloader, split):
     generated = []
-    for batch in tqdm(dataloader):
-        text, summ = batch[0], batch[1]
-        batch_size = len(text)
 
-        text_encodings = tokenizer(text, padding=True, truncation=True, 
-                                   return_tensors='pt').to(model.device)        
+    for batch in tqdm(dataloader):
+        text = batch['text'].to(config.device), 
+        summ = batch['summ'].to(config.device)
+        text_mask = (text == config.pad_id).to(config.device)
+        batch_size = text.size(0)
         
         with torch.no_grad():
-            pred = model.generate(input_ids=text_encodings.input_ids,
-                                  attention_mask=text_encodings.attention_mask,
-                                  max_new_tokens=1024, use_cache=True)
+            pred = model.generate(input_ids=text, 
+                                  attention_mask=text_mask,
+                                  max_new_tokens=config.max_len,
+                                  use_cache=True)
 
+        text, summ, pred = text.tolist(), summ.tolist(), pred.tolist()
         for i in range(batch_size):
             generated.append({'text': text[i], 
                               'summ': summ[i], 
                               'pred': pred[i]})
 
-    with open(f'data/{split}.json', 'w') as f:
+    with open(f'data/sample_{split}.json', 'w') as f:
         json.dump(generated, f)        
     
 
 
 
-def pretrain(config, g_model, d_model, tokenizer):
+def pretrain(config, g_model, d_model):
 
     ###PreTrain Generator with Character Dataset    
     g_train_dataloader = load_dataloader(config, 'train')
     g_valid_dataloader = load_dataloader(config, 'valid')
 
-    g_trainer = GenTrainer(config, g_model, tokenizer, 
-                           g_train_dataloader, g_valid_dataloader)
+    g_trainer = GenTrainer(config, g_model, g_train_dataloader, g_valid_dataloader)
     g_trainer.train()
 
     #Load Best Generator States After Pretrtaining
-    g_model_state = torch.torch.load(config.g_base_ckpt, map_location=config.device)['model_state_dict']
-    g_model.load_state_dict(model_state)
+    g_model_state = torch.torch.load(config.g_base_ckpt, 
+                                     map_location=config.device)['model_state_dict']
+    g_model.load_state_dict(g_model_state)
     g_model.eval()
 
     ###Generate Samples for Discriminator PreTraining
-    generate(config, g_model, g_train_dataloader)
-    generate(config, g_model, g_valid_dataloader)
+    generate(config, g_model, g_train_dataloader, 'train')
+    generate(config, g_model, g_valid_dataloader, 'valid')
 
     
     ###PreTrain Discriminator
-    config.model_type = 'discriminator'
     d_train_dataloader = load_dataloader(config, 'sample_train')
     d_valid_dataloader = load_dataloader(config, 'sample_valid')        
 
-    d_trainer = DisTrainer(config, d_model, tokenizer, 
-                           d_train_dataloader, d_valid_dataloader)
+    d_trainer = DisTrainer(config, d_model, d_train_dataloader, d_valid_dataloader)
     d_trainer.train()
 
 
 
 
-def train(config, g_model, d_model, tokenizer):
+def train(config, g_model, d_model):
     train_dataloader = load_dataloader(config, 'train')
     valid_dataloader = load_dataloader(config, 'valid')
 
-    trainer = Trainer(config, g_model, d_model, tokenizer, 
-                      train_dataloader, valid_dataloader)
+    trainer = Trainer(config, g_model, d_model, train_dataloader, valid_dataloader)
     trainer.train()
 
 
 
-def test(config, g_model, d_model, tokenizer):
+def test(config, g_model, d_model):
     test_dataloader = load_dataloader(config, 'test')
-    tester = Tester(config, g_model, d_model, tokenizer, test_dataloader)    
+    tester = Tester(config, g_model, d_model, test_dataloader)    
     tester.test()    
 
 
@@ -136,7 +135,8 @@ def inference(g_model, tokenizer):
 
         #convert user input_seq into model input_ids
         input_ids = tokenizer(input_seq, return_tensors='pt')['input_ids']
-        output_ids = g_model.generate(input_ids, max_new_tokens=1024, use_cache=True)
+        output_ids = g_model.generate(input_ids, use_cache=True, 
+                                      max_new_tokens=tokenizer.model_max_length)
         output_seq = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
 
         #Search Output Sequence
@@ -156,11 +156,11 @@ def main(args):
         d_model = load_discriminator(config)
 
     if config.mode == 'pretrain':
-        pretrain(config, g_model, d_model, tokenizer)
+        pretrain(config, g_model, d_model)
     elif config.mode == 'train':
-        train(config, g_model, d_model, tokenizer)
+        train(config, g_model, d_model)
     elif config.mode == 'test':
-        test(config, g_model, d_model, tokenizer)
+        test(config, g_model, d_model)
     elif config.mode == 'inference':
         inference(g_model, tokenizer)
     

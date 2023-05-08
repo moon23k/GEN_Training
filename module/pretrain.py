@@ -8,12 +8,11 @@ from module.train import TrainerBase
 
 
 class GenTrainer(TrainerBase):
-    def __init__(self, config, model, tokenizer, train_dataloader, valid_dataloader):
+    def __init__(self, config, model, train_dataloader, valid_dataloader):
         
         super(GenTrainer, self).__init__(config)
 
         self.model = model
-        self.tokenizer = tokenizer
         self.train_dataloader = train_dataloader
         self.valid_dataloader = valid_dataloader
 
