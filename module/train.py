@@ -1,8 +1,9 @@
 import time, json, torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.amp as amp
 import torch.optim as optim
+import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence
 
 
 
@@ -30,45 +31,58 @@ class TrainerBase:
         return f"{elapsed_min}m {elapsed_sec}s"
 
 
-    def collate_dis_inputs(self, uttr, resp, pred):
+    def collate_dis_inputs(self, text_batch, summ_batch, pred_batch):
 
-        pos_encodings = self.tokenize(uttr + resp)
-        neg_encodings = self.tokenize(uttr + pred)
+        pos_ids_batch, neg_ids_batch = [], []
 
-        pos_ids, pos_mask = pos_encodings.input_ids, pos_encodings.attention_mask
-        neg_ids, neg_mask = neg_encodings.input_ids, neg_encodings.attention_mask
+        for text, summ, pred in zip(text_batch.tolist(), 
+                                    summ_batch.tolist(), 
+                                    pred_batch.tolist()):
+            
+            _text = [x for x in text if x != self.pad_id]
+            _text_seg = [0 for _ in range(_text)]
+            
+            _summ = [x for x in summ if x != self.pad_id]
+            _summ_seg = [1 for _ in range(_summ)]
 
-        batch_size, pos_len = pos_ids.shape
-        neg_len = neg_ids.size(1)
-        pad_len = neg_len - pos_len
+            _pred = [x for x in pred if x != self.pad_id]
+            _pred_seg = [1 for _ in range(_pred)]
 
-        #Padding
-        if pad_len > 0:
-            pad_tensor = torch.zeros((batch_size, pad_len), dtype=torch.long).to(self.device)
-            pos_ids = torch.cat((pos_ids, pad_tensor), dim=1)
-            pos_mask = torch.cat((pos_mask, pad_tensor), dim=1)
+            pos_ids = torch.LongTensor(_text + _summ)
+            pos_seg = torch.LongTensor(_text_seg + _summ_seg)
 
-        else:
-            pad_tensor = torch.zeros((batch_size, -pad_len), dtype=torch.long).to(self.device)
-            neg_ids = torch.cat((neg_ids, pad_tensor), dim=1)
-            neg_mask = torch.cat((neg_mask, pad_tensor), dim=1)
+            neg_ids = torch.LongTensor(_text + _pred)
+            neg_seg = torch.LongTensor(_text_seg + _pred_seg)
 
+            pos_ids_batch.append(pos_ids)
+            pos_ids_batch.append(pos_seg)
 
-        ids = torch.cat((pos_ids, neg_ids), dim=0).to(self.device)
-        masks = torch.cat((pos_mask, neg_mask), dim=0).to(self.device)
-
-        labels = torch.cat((torch.zeros(batch_size), torch.ones(batch_size)), dim=0)
-        indice = torch.randperm(batch_size * 2).long()
-
-        #Shuffle Discriminator inputs
-        ids = ids[indice].to(self.device)
-        masks = masks[indice].to(self.device)
-        labels = labels[indice].to(self.device)
-
-        return ids, masks, labels
+            neg_ids_batch.append(neg_ids)
+            neg_ids_batch.append(neg_seg)
 
 
-    def save_ckpt(self, epoch, ckpt, model, optimizer):
+        ids_batch = pad_sequence(pos_ids_batch + neg_ids_batch, 
+                                 batch_first=True, 
+                                 padding_value=self.pad_id) 
+        seg_batch = pad_sequence(pos_seg_batch + neg_seg_batch, 
+                                 batch_first=True, 
+                                 padding_value=self.pad_id)
+
+        return ids_batch, seg_batch
+
+
+    @staticmethod
+    def shuffle_indice(dis_ids_batch, dis_seg_batch):
+        batch_size = dis_ids_batch.size(0)
+
+        indice = torch.randperm(batch_size).long()
+        labels = torch.tensor([0 if i % 2 == 0 else 1 for i in range(batch_size)])
+
+        return dis_ids_batch[indice], dis_seg_batch[indice], labels[indice]
+
+
+    @staticmethod
+    def save_ckpt(epoch, ckpt, model, optimizer):
         torch.save({'epoch': epoch,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict()},
@@ -114,58 +128,23 @@ class Trainer(TrainerBase):
 
 
 
-    def discriminate(self, uttr, resp=None, pred=None):
-        if resp is None:
-            encodings = self.tokenize(uttr + pred)
-            ids = encodings.input_ids
-            masks = encodings.attention_mask
-            labels = torch.zeros(ids.size(0)).to(self.device)
-        else:
-            ids, masks, labels = self.collate_dis_inputs(uttr, resp, pred)
-
-        with torch.autocast(device_type=self.device_type, dtype=torch.float16):
-            outs = self.d_model(input_ids=ids, attention_mask=masks, labels=labels)        
-
-        return outs
-
-
-    def generate(self, text, text_mask):
-        is_training = self.g_model.training()
-        
-        if is_training:
-            self.g_model.eval()
-
-        with torch.autocast(device_type=self.device.type, dtype=torch.float16):
-            pred = self.g_model.generate(input_ids=text,
-                                         attention_mask=text_mask, 
-                                         max_new_tokens=self.max_len, 
-                                         use_cache=True)    
-        
-        if is_training:
-            self.g_model.train()
-            
-        return pred
-
-
     def get_losses(self, batch):
 
         #Collate Batch
         text = batch['text'].to(self.device)
         summ = batch['summ'].to(self.device)
+        mask = (text == self.pad_id).to(self.device)
         batch_size = text.size(0)
 
 
         #Generate Pred
-        pred = self.g_model.generate(input_ids=text, 
-                                     attention_mask=(text == self.pad_id).to(self.device))
+        with torch.no_grad():
+            pred = self.g_model.generate(input_ids=text, 
+                                         attention_mask=mask,
+                                         max_new_tokens=config.max_len,
+                                         use_cache=True)
 
-
-        #manipulate discriminator_inputs
-        dis_inputs = []
-        for i in range(batch_size):
-            dis_inputs.append(torch.cat((text[i] != self.pad_id), (summ[i] != self.pad_id)))
-            dis_inputs.append(torch.cat((text[i] != self.pad_id), (pred[i] != self.pad_id)))
-        dis_inputs = pad_sequence(dis_inputs, batch_first=True, padding_value=self.pad_id)
+        dis_ids, dis_seg = self.collate_dis_inputs(text, summ, pred)
 
         #get g_loss
         g_logit = self.d_model(dis_inputs[::2]).logit
@@ -177,12 +156,11 @@ class Trainer(TrainerBase):
         g_loss = -torch.log(torch.tensor(g_logit, requires_grad=True)).to(self.device)
 
         #Shuffle
-        indice = torch.randperm(batch_size * 2).long()
-        labels = torch.tensor([0 if i % 2 == 0 else 1 for i in range(batch_size*2)])
-        dis_inputs = dis_inputs[indice]
-        labels = labels[indice]
-
-        d_loss = self.d_model(dis_inputs, labels).loss
+        dis_ids, dis_seg, labels = self.shuffle_indice(dis_ids, dis_seg)
+        d_loss = self.d_model(input_ids=dis_ids,
+                              attention_mask=(dis_ids==self.pad_id).to(self.device),
+                              token_type_ids=dis_seg, 
+                              labels=labels).loss
         
         return g_loss, d_loss
 

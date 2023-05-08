@@ -87,15 +87,13 @@ class GenTrainer(TrainerBase):
         
         for idx, batch in enumerate(self.train_dataloader):
             idx += 1
-            uttr, resp = batch[0], batch[1]
-
-            uttr_encodings = self.tokenize(uttr)
-            resp_encodings = self.tokenize(resp)
+            text = batch['text'].to(self.device)
+            summ = batch['summ'].to(self.device)
 
             with torch.autocast(device_type=self.device_type, dtype=torch.float16):
-                loss = self.model(input_ids=uttr_encodings.input_ids,
-                                  attention_mask=uttr_encodings.attention_mask,
-                                  labels=resp_encodings.input_ids).loss
+                loss = self.model(input_ids=text,
+                                  attention_mask=(text == self.pad_id).to(self.device),
+                                  labels=summ).loss
                 loss = loss / self.iters_to_accumulate
 
             #Backward Loss
@@ -113,8 +111,7 @@ class GenTrainer(TrainerBase):
 
             epoch_loss += loss.item()
 
-        epoch_loss = round(epoch_loss / tot_len, 3)
-        return epoch_loss
+        return round(epoch_loss / tot_len, 3)
 
 
     def valid_epoch(self):
@@ -122,30 +119,27 @@ class GenTrainer(TrainerBase):
         self.model.eval()
 
         for batch in self.valid_dataloader:
-            uttr, resp = batch[0], batch[1]
-            uttr_encodings = self.tokenize(uttr)
-            resp_encodings = self.tokenize(resp)
+            text = batch['text'].to(self.device)
+            summ = batch['summ'].to(self.device)
 
             with torch.no_grad():
-                loss = self.model(input_ids=uttr_encodings.input_ids, 
-                                  attention_mask=uttr_encodings.attention_mask,
-                                  labels=resp_encodings.input_ids).loss
+                loss = self.model(input_ids=text,
+                                  attention_mask=(text == self.pad_id).to(self.device),
+                                  labels=summ).loss
 
             epoch_loss += loss.item()
 
-        epoch_loss = round(epoch_loss / len(self.valid_dataloader), 3)
-        return epoch_loss
+        return round(epoch_loss / len(self.valid_dataloader), 3)
 
 
 
 
 class DisTrainer(TrainerBase):
-    def __init__(self, config, model, tokenizer, train_dataloader, valid_dataloader):
+    def __init__(self, config, model, train_dataloader, valid_dataloader):
         
         super(DisTrainer, self).__init__(config)
 
         self.model = model
-        self.tokenizer = tokenizer
 
         self.train_dataloader = train_dataloader
         self.valid_dataloader = valid_dataloader
@@ -214,15 +208,21 @@ class DisTrainer(TrainerBase):
 
 
     def train_epoch(self):
+        
+        self.model.train()
         epoch_loss = 0
         tot_len = len(self.train_dataloader)
 
-        self.model.train()
-        for idx, batch in enumerate(self.train_dataloader):
-            
+
+        for idx, batch in enumerate(self.train_dataloader):            
             idx += 1
-            uttr, pos, neg = batch[0], batch[1], batch[2]
-            ids, masks, labels = self.collate_dis_inputs(uttr, pos, neg)
+            text = batch['text'].to(self.device)
+            summ = batch['summ'].to(self.device)
+            pred = batch['pred'].to(self.device)
+
+            dis_inputs, dis_mask = self.collate_dis_inputs(text, summ, pred)
+            dis_inputs, dis_mask, labels = self.shuffle_indice(dis_inputs)
+
 
             with torch.autocast(device_type=self.device_type, dtype=torch.float16):
                 loss = self.model(input_ids=ids, attention_mask=masks, labels=labels).loss            

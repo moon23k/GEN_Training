@@ -30,13 +30,17 @@ class Discriminator(nn.Module):
         self.outputs = namedtuple('Discriminator_Outputs', ('logit', 'loss'))
 
         
-    def forward(self, input_ids, attention_mask, labels):
-        out = self.encoder(input_ids, attention_mask).last_hidden_state
-        out = self.classifier(out[:, 0, :])
-        out = self.dropout(out).squeeze()
+    def forward(self, input_ids, attention_mask, token_type_ids, labels):
+        out = self.encoder(input_ids=input_ids, 
+                           attention_mask=attention_mask,
+                           token_type_ids=token_type_ids).last_hidden_state
+        
+        logit = self.classifier(out[:, 0, :])
+        logit = self.dropout(out).squeeze()
 
-        loss = self.criterion(out, labels)
-        return self.outputs(out, loss)
+        loss = self.criterion(logit, labels)
+
+        return self.outputs(logit, loss)
 
 
 
