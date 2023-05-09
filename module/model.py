@@ -17,8 +17,8 @@ class Discriminator(nn.Module):
         if config.mode == 'train':
             self.encoder = LongformerModel.from_pretrained(config.d_mname).to(self.device)
         else:
-            bert_config = LongformerConfig.from_pretrained(config.d_mname)
-            self.encoder = LongformerModel(bert_config).to(self.device)
+            model_config = LongformerConfig.from_pretrained(config.d_mname)
+            self.encoder = LongformerModel(model_config).to(self.device)
             
 
         self.classifier = nn.Linear(self.encoder.config.hidden_size, 1)
@@ -30,14 +30,10 @@ class Discriminator(nn.Module):
         self.outputs = namedtuple('Discriminator_Outputs', ('logit', 'loss'))
 
         
-    def forward(self, input_ids, attention_mask, token_type_ids, labels):
-        out = self.encoder(input_ids=input_ids, 
-                           attention_mask=attention_mask,
-                           token_type_ids=token_type_ids).last_hidden_state
-        
-        logit = self.classifier(out[:, 0, :])
-        logit = self.dropout(out).squeeze()
-
+    def forward(self, input_ids, labels):
+        out = self.encoder(input_ids=input_ids).last_hidden_state
+        out = self.classifier(out[:, 0, :])
+        logit = self.dropout(out).squeeze().squeeze()
         loss = self.criterion(logit, labels)
 
         return self.outputs(logit, loss)

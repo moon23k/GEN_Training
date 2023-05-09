@@ -12,10 +12,11 @@ class TrainerBase:
         
         self.mode = config.mode
         self.clip = config.clip
+        self.pad_id = config.pad_id
+        self.sep_id = config.sep_id
         self.device = config.device
         self.max_len = config.max_len
         self.n_epochs = config.n_epochs
-        self.device_type = config.device_type
         self.scaler = torch.cuda.amp.GradScaler()
         self.iters_to_accumulate = config.iters_to_accumulate
 
@@ -40,45 +41,32 @@ class TrainerBase:
                                     pred_batch.tolist()):
             
             _text = [x for x in text if x != self.pad_id]
-            _text_seg = [0 for _ in range(_text)]
-            
-            _summ = [x for x in summ if x != self.pad_id]
-            _summ_seg = [1 for _ in range(_summ)]
+            _summ = [x for x in summ[1:] if x != self.pad_id]
+            _pred = [x for x in pred[1:] if x != self.pad_id]
 
-            _pred = [x for x in pred if x != self.pad_id]
-            _pred_seg = [1 for _ in range(_pred)]
-
-            pos_ids = torch.LongTensor(_text + _summ)
-            pos_seg = torch.LongTensor(_text_seg + _summ_seg)
-
-            neg_ids = torch.LongTensor(_text + _pred)
-            neg_seg = torch.LongTensor(_text_seg + _pred_seg)
+            pos_ids = torch.LongTensor(_text + [self.sep_id] + _summ[1:])
+            neg_ids = torch.LongTensor(_text + [self.sep_id] + _pred[2:])
 
             pos_ids_batch.append(pos_ids)
-            pos_ids_batch.append(pos_seg)
-
             neg_ids_batch.append(neg_ids)
-            neg_ids_batch.append(neg_seg)
 
 
-        ids_batch = pad_sequence(pos_ids_batch + neg_ids_batch, 
-                                 batch_first=True, 
-                                 padding_value=self.pad_id) 
-        seg_batch = pad_sequence(pos_seg_batch + neg_seg_batch, 
+        collated = pad_sequence(pos_ids_batch + neg_ids_batch, 
                                  batch_first=True, 
                                  padding_value=self.pad_id)
 
-        return ids_batch, seg_batch
+        return collated.to(self.device)
 
 
-    @staticmethod
-    def shuffle_indice(dis_ids_batch, dis_seg_batch):
-        batch_size = dis_ids_batch.size(0)
+    def shuffle_indice(self, dis_ids):
+        
+        batch_size = dis_ids.size(0)
 
         indice = torch.randperm(batch_size).long()
-        labels = torch.tensor([0 if i % 2 == 0 else 1 for i in range(batch_size)])
+        labels = [0 if i % 2 == 0 else 1 for i in range(batch_size)]
+        labels = torch.FloatTensor(labels).to(self.device)
 
-        return dis_ids_batch[indice], dis_seg_batch[indice], labels[indice]
+        return dis_ids[indice], labels[indice]
 
 
     @staticmethod
@@ -141,13 +129,13 @@ class Trainer(TrainerBase):
         with torch.no_grad():
             pred = self.g_model.generate(input_ids=text, 
                                          attention_mask=mask,
-                                         max_new_tokens=config.max_len,
+                                         max_new_tokens=self.max_len,
                                          use_cache=True)
 
         dis_ids, dis_seg = self.collate_dis_inputs(text, summ, pred)
 
         #get g_loss
-        g_logit = self.d_model(dis_inputs[::2]).logit
+        g_logit = self.d_model(dis_ids[::2]).logit
         g_loss = (g_logit.softmax >= 0.5).sum().item() / batch_size
         
         if not g_logit:

@@ -8,7 +8,7 @@ from transformers import LEDTokenizerFast
 def process_data(orig_data, tokenizer):
 
     processed = []
-    cnt, volumn = 0, 34000
+    cnt, volumn = 0, 12000
     min_len, max_len = 1000, 3000
 
     
@@ -32,7 +32,7 @@ def process_data(orig_data, tokenizer):
 
 def save_data(data_obj):
     #split data into train/valid/test sets
-    train, valid, test = data_obj[:-4000], data_obj[-4000:-1000], data_obj[-1000:]
+    train, valid, test = data_obj[:-2000], data_obj[-2000:-1000], data_obj[-1000:]
     data_dict = {k:v for k, v in zip(['train', 'valid', 'test'], [train, valid, test])}
 
     for key, val in data_dict.items():

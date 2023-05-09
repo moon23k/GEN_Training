@@ -9,7 +9,6 @@ from module.train import TrainerBase
 
 class GenTrainer(TrainerBase):
     def __init__(self, config, model, train_dataloader, valid_dataloader):
-        
         super(GenTrainer, self).__init__(config)
 
         self.model = model
@@ -90,7 +89,7 @@ class GenTrainer(TrainerBase):
             text = batch['text'].to(self.device)
             summ = batch['summ'].to(self.device)
 
-            with torch.autocast(device_type=self.device_type, dtype=torch.float16):
+            with torch.autocast(device_type=self.device.type, dtype=torch.float16):
                 loss = self.model(input_ids=text,
                                   attention_mask=(text == self.pad_id).to(self.device),
                                   labels=summ).loss
@@ -136,11 +135,9 @@ class GenTrainer(TrainerBase):
 
 class DisTrainer(TrainerBase):
     def __init__(self, config, model, train_dataloader, valid_dataloader):
-        
         super(DisTrainer, self).__init__(config)
 
         self.model = model
-
         self.train_dataloader = train_dataloader
         self.valid_dataloader = valid_dataloader
 
@@ -216,16 +213,18 @@ class DisTrainer(TrainerBase):
 
         for idx, batch in enumerate(self.train_dataloader):            
             idx += 1
+
             text = batch['text'].to(self.device)
             summ = batch['summ'].to(self.device)
             pred = batch['pred'].to(self.device)
 
-            dis_inputs, dis_mask = self.collate_dis_inputs(text, summ, pred)
-            dis_inputs, dis_mask, labels = self.shuffle_indice(dis_inputs)
+            input_ids = self.collate_dis_inputs(text, summ, pred)
+            input_ids, labels = self.shuffle_indice(input_ids)
 
+            loss = self.g_model(input_ids=input_ids,
+                                attention_mask=(input_ids!=self.pad_id),
+                                labels=labels).loss
 
-            with torch.autocast(device_type=self.device_type, dtype=torch.float16):
-                loss = self.model(input_ids=ids, attention_mask=masks, labels=labels).loss            
             loss = loss / self.iters_to_accumulate
 
             #Backward Loss

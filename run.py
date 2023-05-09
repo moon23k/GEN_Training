@@ -24,7 +24,7 @@ class Config(object):
         self.clip = 1
         self.lr = 5e-5
         self.n_epochs = 10
-        self.batch_size = 32
+        self.batch_size = 4
         self.iters_to_accumulate = 4
 
         self.early_stop = True
@@ -51,14 +51,14 @@ def generate(config, model, dataloader, split):
     generated = []
 
     for batch in tqdm(dataloader):
-        text = batch['text'].to(config.device), 
+        text = batch['text'].to(config.device) 
         summ = batch['summ'].to(config.device)
-        text_mask = (text == config.pad_id).to(config.device)
+        mask = text == config.pad_id
         batch_size = text.size(0)
         
         with torch.no_grad():
             pred = model.generate(input_ids=text, 
-                                  attention_mask=text_mask,
+                                  attention_mask=mask,
                                   max_new_tokens=config.max_len,
                                   use_cache=True)
 
@@ -144,12 +144,15 @@ def inference(g_model, tokenizer):
 
 
 
-def main(args):
+def main(mode):
+
     set_seed(42)
-    config = Config(args)    
+    config = Config(mode)    
     tokenizer = LEDTokenizerFast.from_pretrained(config.g_mname)
     tokenizer.model_max_length = config.max_len
     setattr(config, 'pad_id', tokenizer.pad_token_id)
+    setattr(config, 'sep_id', tokenizer.sep_token_id)
+
 
     g_model = load_generator(config)
     if config.mode != "inference":
