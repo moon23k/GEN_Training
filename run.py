@@ -1,12 +1,10 @@
+from tqdm import tqdm
 import os, json, argparse, torch
-
 from module.test import Tester
 from module.train import Trainer
 from module.data import load_dataloader
 from module.pretrain import GenTrainer, DisTrainer
 from module.model import load_generator, load_discriminator
-
-from tqdm import tqdm
 from transformers import (set_seed, 
                           LongformerModel, 
                           LEDTokenizerFast,
@@ -19,7 +17,7 @@ class Config(object):
         self.mode = mode
         self.g_mname = "allenai/led-base-16384"
         self.d_mname = "allenai/longformer-base-4096"
-        self.max_len = 4096
+        self.max_len = 512
 
         self.clip = 1
         self.lr = 5e-5
@@ -53,14 +51,13 @@ def generate(config, model, dataloader, split):
     for batch in tqdm(dataloader):
         text = batch['text'].to(config.device) 
         summ = batch['summ'].to(config.device)
-        mask = text == config.pad_id
         batch_size = text.size(0)
         
         with torch.no_grad():
-            pred = model.generate(input_ids=text, 
-                                  attention_mask=mask,
-                                  max_new_tokens=config.max_len,
-                                  use_cache=True)
+            with torch.autocast(device_type=self.device.type, dtype=torch.float16):
+                pred = model.generate(input_ids=text, 
+                                      max_new_tokens=config.max_len,
+                                      use_cache=True)
 
         text, summ, pred = text.tolist(), summ.tolist(), pred.tolist()
         for i in range(batch_size):
@@ -90,11 +87,12 @@ def pretrain(config, g_model, d_model):
     g_model.eval()
 
     ###Generate Samples for Discriminator PreTraining
+    config.batch_size = 32
     generate(config, g_model, g_train_dataloader, 'train')
     generate(config, g_model, g_valid_dataloader, 'valid')
-
     
     ###PreTrain Discriminator
+    config.batch_size = 2
     d_train_dataloader = load_dataloader(config, 'sample_train')
     d_valid_dataloader = load_dataloader(config, 'sample_valid')        
 

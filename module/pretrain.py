@@ -90,9 +90,7 @@ class GenTrainer(TrainerBase):
             summ = batch['summ'].to(self.device)
 
             with torch.autocast(device_type=self.device.type, dtype=torch.float16):
-                loss = self.model(input_ids=text,
-                                  attention_mask=(text == self.pad_id).to(self.device),
-                                  labels=summ).loss
+                loss = self.model(input_ids=text, labels=summ).loss
                 loss = loss / self.iters_to_accumulate
 
             #Backward Loss
@@ -122,9 +120,7 @@ class GenTrainer(TrainerBase):
             summ = batch['summ'].to(self.device)
 
             with torch.no_grad():
-                loss = self.model(input_ids=text,
-                                  attention_mask=(text == self.pad_id).to(self.device),
-                                  labels=summ).loss
+                loss = self.model(input_ids=text, labels=summ).loss
 
             epoch_loss += loss.item()
 
@@ -161,8 +157,9 @@ class DisTrainer(TrainerBase):
 
     def train(self):
         records = []        
-        prev_loss, best_loss = float('inf'), float('inf')
         patience = self.patience
+        prev_loss, best_loss = float('inf'), float('inf')
+        
 
         for epoch in range(1, self.n_epochs + 1):
             start_time = time.time()
@@ -213,7 +210,6 @@ class DisTrainer(TrainerBase):
 
         for idx, batch in enumerate(self.train_dataloader):            
             idx += 1
-
             text = batch['text'].to(self.device)
             summ = batch['summ'].to(self.device)
             pred = batch['pred'].to(self.device)
@@ -221,11 +217,9 @@ class DisTrainer(TrainerBase):
             input_ids = self.collate_dis_inputs(text, summ, pred)
             input_ids, labels = self.shuffle_indice(input_ids)
 
-            loss = self.g_model(input_ids=input_ids,
-                                attention_mask=(input_ids!=self.pad_id),
-                                labels=labels).loss
-
-            loss = loss / self.iters_to_accumulate
+            with torch.autocast(device_type=self.device.type, dtype=torch.float16):
+                loss = self.model(input_ids=input_ids, labels=labels).loss
+                loss = loss / self.iters_to_accumulate
 
             #Backward Loss
             self.scaler.scale(loss).backward()        
@@ -242,20 +236,25 @@ class DisTrainer(TrainerBase):
 
             epoch_loss += loss.item()
 
-        epoch_loss = round(epoch_loss / tot_len, 3)
-        return epoch_loss
+        return round(epoch_loss / tot_len, 3)
     
 
 
     def valid_epoch(self):
         epoch_loss = 0
-
         self.model.eval()
+
         for batch in self.valid_dataloader:
-            ids, masks, labels = self.collate_batch(batch)
+            text = batch['text'].to(self.device)
+            summ = batch['summ'].to(self.device)
+            pred = batch['pred'].to(self.device)
+
+            input_ids = self.collate_dis_inputs(text, summ, pred)
+            input_ids, labels = self.shuffle_indice(input_ids)
+
             with torch.no_grad():
-                loss = self.model(input_ids=ids, attention_mask=masks, labels=labels).loss
+                loss = self.model(input_ids=input_ids, labels=labels).loss
+            
             epoch_loss += loss.item()
 
-        epoch_loss = round(epoch_loss / len(self.valid_dataloader), 3)
-        return epoch_loss
+        return round(epoch_loss / len(self.valid_dataloader), 3)

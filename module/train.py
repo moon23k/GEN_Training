@@ -35,14 +35,13 @@ class TrainerBase:
     def collate_dis_inputs(self, text_batch, summ_batch, pred_batch):
 
         pos_ids_batch, neg_ids_batch = [], []
-
         for text, summ, pred in zip(text_batch.tolist(), 
                                     summ_batch.tolist(), 
                                     pred_batch.tolist()):
             
             _text = [x for x in text if x != self.pad_id]
-            _summ = [x for x in summ[1:] if x != self.pad_id]
-            _pred = [x for x in pred[1:] if x != self.pad_id]
+            _summ = [x for x in summ if x != self.pad_id]
+            _pred = [x for x in pred if x != self.pad_id]
 
             pos_ids = torch.LongTensor(_text + [self.sep_id] + _summ[1:])
             neg_ids = torch.LongTensor(_text + [self.sep_id] + _pred[2:])
@@ -52,8 +51,8 @@ class TrainerBase:
 
 
         collated = pad_sequence(pos_ids_batch + neg_ids_batch, 
-                                 batch_first=True, 
-                                 padding_value=self.pad_id)
+                                batch_first=True, 
+                                padding_value=self.pad_id)
 
         return collated.to(self.device)
 
@@ -121,22 +120,22 @@ class Trainer(TrainerBase):
         #Collate Batch
         text = batch['text'].to(self.device)
         summ = batch['summ'].to(self.device)
-        mask = (text == self.pad_id).to(self.device)
         batch_size = text.size(0)
-
 
         #Generate Pred
         with torch.no_grad():
-            pred = self.g_model.generate(input_ids=text, 
-                                         attention_mask=mask,
-                                         max_new_tokens=self.max_len,
-                                         use_cache=True)
+            with torch.autocast(device_type=self.device.type, dtype=torch.float16):
+                pred = self.g_model.generate(input_ids=text, 
+                                             max_new_tokens=self.max_len,
+                                             use_cache=True)
 
-        dis_ids, dis_seg = self.collate_dis_inputs(text, summ, pred)
+        dis_ids = self.collate_dis_inputs(text, summ, pred)
 
         #get g_loss
-        g_logit = self.d_model(dis_ids[::2]).logit
-        g_loss = (g_logit.softmax >= 0.5).sum().item() / batch_size
+        with torch.autocast(device_type=self.device.type, dtype=torch.float16):
+            g_logit = self.d_model(dis_ids[::2], torch.zeros(batch_size).to(self.device)).logit
+    
+        g_logit = (F.softmax(g_logit, dim=0) >= 0.5).sum().item() / batch_size
         
         if not g_logit:
             g_logit = 1e-4
@@ -144,11 +143,9 @@ class Trainer(TrainerBase):
         g_loss = -torch.log(torch.tensor(g_logit, requires_grad=True)).to(self.device)
 
         #Shuffle
-        dis_ids, dis_seg, labels = self.shuffle_indice(dis_ids, dis_seg)
-        d_loss = self.d_model(input_ids=dis_ids,
-                              attention_mask=(dis_ids==self.pad_id).to(self.device),
-                              token_type_ids=dis_seg, 
-                              labels=labels).loss
+        dis_ids, labels = self.shuffle_indice(dis_ids)
+        with torch.autocast(device_type=self.device.type, dtype=torch.float16):
+            d_loss = self.d_model(input_ids=dis_ids, labels=labels).loss
         
         return g_loss, d_loss
 
