@@ -1,14 +1,32 @@
 ## Generative Training
-&nbsp; In Transformer models for natural language generation, Exposure Bias is a significant factor that impairs actual inference performance. 
-What makes overcoming Exposure Bias challenging is the use of Teacher Forcing in the typical training process of Transformers.
+&nbsp; The Transformer Seq2Seq model for natural language generation typically employs Teacher Forcing during training. 
+While this approach promotes stable learning, it has limitations in improving inference performance since Teacher Forcing is absent during the inference phase.
 
-To address this issue, there are two primary approaches.
-The first approach involves increasing the model's size and training it with a substantial amount of data. 
-However, this approach may be hindered by data collection challenges and the excessive use of computing resources.
-The second approach adopts generative learning. 
-This method can be highly effective when training the model with limited data, providing a way to alleviate constraints related to data acquisition.
+To address this issue, there are two main approaches. 
+One involves increasing the amount of data to enhance the model's generalization performance. 
+The other approach leverages the same mechanisms used during inference in the training phase to improve inference capabilities.
 
-In this project, we compare the effectiveness of generative learning and data acquisition when training the model with a small dataset to determine which approach is more efficient.
+In this project, we aim to directly assess which of the two methods, increasing the data volume or adopting generative learning, is more effective for three natural language generation tasks. 
+This evaluation is conducted in a scenario where the available data is limited.
+
+
+<br><br> 
+
+## Training Methodologies
+
+> **Teacher Forcing Training**
+
+자연어생성을 위한 Transformer Seq2seq 모델의 가장 기본적인 학습방식.
+학습과정에서 Masking을 통한 Teacher Forcing으로 학습의 안정성을 도모.
+
+<br> 
+
+> **Generative Training**
+
+Teacher Forcing없이 Self Auto Regreesive한 방식의 학습방식.
+추론과 동일한 로직으로 학습과정을 전개시킴.
+다만 생성 과정에서의 효율성을 증대시키기 위해 cache를 활용합니다.
+
 
 <br><br> 
 
@@ -22,11 +40,11 @@ In this project, we compare the effectiveness of generative learning and data ac
 
 ## Results
 
-| Training Method | Translation | Dialogue | Summarization |
+| Model Type | Translation | Dialogue | Summarization |
 |---|---|---|---|
-| Basic ||||
-| Generative ||||
-| Large ||||
+| Base Line  | - | - | - |
+| Scaled Up  | - | - | - |
+| Generative | - | - | - |
 
 <br><br> 
 
@@ -42,7 +60,7 @@ python3 setup.py -task ['all', 'translation', 'dialogue', 'summarization']
 ```
 python3 run.py -task ['translation', 'dialogue', 'summarization']
                -mode ['train', 'test', 'inference']
-               -train_opt ['basic', 'generative', 'large']
+               -model ['baseline', 'scale_up', 'generative']
                -search(Optional) ['greedy', 'beam']
 ```
 
