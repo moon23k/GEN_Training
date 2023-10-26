@@ -5,68 +5,63 @@ from torch.nn.utils.rnn import pad_sequence
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, split):
+
+    def __init__(self, tokenizer, task, split):
         super().__init__()
-        self.split = split
-        self.data = self.load_data(split)
+        self.augment = config.model == 'augment'
+        self.tokenizer = tokenizer
+        self.data = self.load_data(task, split)
+
 
     @staticmethod
-    def load_data(split):
-        with open(f"data/{split}.json", 'r') as f:
+    def load_data(task, split):
+        with open(f"data/{task}/{split}.json", 'r') as f:
             data = json.load(f)
-        return data
+        return data if self.augment else data[::10]
+
 
     def __len__(self):
         return len(self.data)
     
+
     def __getitem__(self, idx):
-        
-        if 'sample' not in self.split:
-            text = self.data[idx]['text']
-            summ = self.data[idx]['summ']            
-            return text, summ
-        
-        else:
-            text = self.data[idx]['text']
-            summ = self.data[idx]['summ']            
-            pred = self.data[idx]['pred']
-            return text, summ, pred
+        x = self.tokenizer.encode(self.data[idx]['x']).ids
+        y = self.tokenizer.encode(self.data[idx]['y']).ids
+        return torch.LongTensor(x), torch.LongTensor(y)
+
 
 
 class Collator(object):
-    def __init__(self, split, pad_id):
-        self.split = split
+
+    def __init__(self, pad_id):
         self.pad_id = pad_id
 
+
     def __call__(self, batch):
-        
-        if 'sample' not in self.split:
-            text_batch, summ_batch = [], []
-            for elem in batch:
-                text_batch.append(torch.LongTensor(elem[0])) 
-                summ_batch.append(torch.LongTensor(elem[1]))
+        x_batch, y_batch = zip(*batch)     
+        x_batch = self.pad_batch(x_batch)
+        y_batch = self.pad_batch(y_batch)
 
-            return {'text': self.pad_batch(text_batch),
-                    'summ': self.pad_batch(summ_batch)}
+        return {'x': x_batch, 
+                'y': y_batch[:, :-1],
+                'label': y_batch[:, 1:]}
 
-        else:
-            text_batch, summ_batch, pred_batch = [], [], []
-            for elem in batch:
-                text_batch.append(torch.LongTensor(elem[0])) 
-                summ_batch.append(torch.LongTensor(elem[1]))
-                pred_batch.append(torch.LongTensor(elem[2]))
-
-            return {'text': self.pad_batch(text_batch),
-                    'summ': self.pad_batch(summ_batch),
-                    'pred': self.pad_batch(pred_batch)}
 
     def pad_batch(self, batch):
-        return pad_sequence(batch, batch_first=True, padding_value=self.pad_id)
+        return pad_sequence(
+            batch, 
+            batch_first=True, 
+            padding_value=self.pad_id
+        )
 
 
-def load_dataloader(config, split):
-    return DataLoader(Dataset(split), 
-                      batch_size=config.batch_size, 
-                      shuffle=True if config.mode == 'train' else False, 
-                      collate_fn=Collator(split, config.pad_id), 
-                      num_workers=2)
+
+def load_dataloader(config, tokenizer, split):
+    return DataLoader(
+        Dataset(tokenizer, config.task, split), 
+        batch_size=config.batch_size, 
+        shuffle=True split == 'train',
+        collate_fn=Collator(config.pad_id),
+        pin_memory=True,
+        num_workers=2
+    )

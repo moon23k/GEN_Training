@@ -1,42 +1,55 @@
-from tqdm import tqdm
-import os, json, argparse, torch
-from module.test import Tester
-from module.train import Trainer
-from module.data import load_dataloader
-from module.pretrain import GenTrainer, DisTrainer
-from module.model import load_generator, load_discriminator
-from transformers import (set_seed, 
-                          LongformerModel, 
-                          LEDTokenizerFast,
-                          LEDForConditionalGeneration)
+import os, yaml, argparse, torch
+
+from tokenizers import Tokenizer
+from tokenizers.processors import TemplateProcessing
+
+from module import (
+    load_dataloader,
+    load_model,
+    Trainer,
+    Tester,
+    Generator
+)
+
+
+
+def set_seed(SEED=42):
+    import random
+    import numpy as np
+    import torch.backends.cudnn as cudnn
+
+    random.seed(SEED)
+    np.random.seed(SEED)
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    cudnn.benchmark = False
+    cudnn.deterministic = True
 
 
 
 class Config(object):
-    def __init__(self, mode):    
-        self.mode = mode
-        self.g_mname = "allenai/led-base-16384"
-        self.d_mname = "allenai/longformer-base-4096"
-        self.max_len = 512
+    def __init__(self, args):    
 
-        self.clip = 1
-        self.lr = 5e-5
-        self.n_epochs = 10
-        self.batch_size = 4
-        self.iters_to_accumulate = 4
+        with open('config.yaml', 'r') as f:
+            params = yaml.load(f, Loader=yaml.FullLoader)
+            for group in params.keys():
+                for key, val in params[group].items():
+                    setattr(self, key, val)
 
-        self.early_stop = True
-        self.patience = 3
+        self.task = args.task
+        self.mode = args.mode
+        self.model_type = args.model
+        self.search_method = args.search
 
-        if self.mode == 'inference':
-            self.device = torch.device('cpu')
-        else:
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.ckpt = f"ckpt/{self.task}/{self.model_type}_model.pt"
+        self.tokenizer_path = f'data/{self.task}/tokenizer.json'
 
-        self.g_ckpt = 'ckpt/generator.pt'
-        self.d_ckpt = 'ckpt/discriminator.pt'
-        self.g_base_ckpt = 'ckpt/generator_base.pt'
-        self.d_base_ckpt = 'ckpt/discriminator_base.pt'
+        use_cuda = torch.cuda.is_available()
+        self.device_type = 'cuda' \
+                           if use_cuda and self.mode != 'inference' \
+                           else 'cpu'
+        self.device = torch.device(self.device_type)
 
 
     def print_attr(self):
@@ -45,142 +58,57 @@ class Config(object):
 
 
 
-def generate(config, model, dataloader, split):
-    generated = []
 
-    for batch in tqdm(dataloader):
-        text = batch['text'].to(config.device) 
-        summ = batch['summ'].to(config.device)
-        batch_size = text.size(0)
-        
-        with torch.no_grad():
-            with torch.autocast(device_type=self.device.type, dtype=torch.float16):
-                pred = model.generate(input_ids=text, 
-                                      max_new_tokens=config.max_len,
-                                      use_cache=True)
+def load_tokenizer(config):
+    assert os.path.exists(config.tokenizer_path)
 
-        text, summ, pred = text.tolist(), summ.tolist(), pred.tolist()
-        for i in range(batch_size):
-            generated.append({'text': text[i], 
-                              'summ': summ[i], 
-                              'pred': pred[i]})
-
-    with open(f'data/sample_{split}.json', 'w') as f:
-        json.dump(generated, f)        
+    tokenizer = Tokenizer.from_file(config.tokenizer_path)    
+    tokenizer.post_processor = TemplateProcessing(
+        single=f"{config.bos_token} $A {config.eos_token}",
+        special_tokens=[(config.bos_token, config.bos_id), 
+                        (config.eos_token, config.eos_id)]
+        )
     
+    return tokenizer
 
 
 
-def pretrain(config, g_model, d_model):
 
-    ###PreTrain Generator with Character Dataset    
-    g_train_dataloader = load_dataloader(config, 'train')
-    g_valid_dataloader = load_dataloader(config, 'valid')
+def main(args):
+    set_seed()
+    config = Config(args)
+    model = load_model(config)
+    tokenizer = load_tokenizer(config)
 
-    g_trainer = GenTrainer(config, g_model, g_train_dataloader, g_valid_dataloader)
-    g_trainer.train()
 
-    #Load Best Generator States After Pretrtaining
-    g_model_state = torch.torch.load(config.g_base_ckpt, 
-                                     map_location=config.device)['model_state_dict']
-    g_model.load_state_dict(g_model_state)
-    g_model.eval()
-
-    ###Generate Samples for Discriminator PreTraining
-    config.batch_size = 32
-    generate(config, g_model, g_train_dataloader, 'train')
-    generate(config, g_model, g_valid_dataloader, 'valid')
+    if config.mode == 'train':
+        train_dataloader = load_dataloader(config, tokenizer, 'train')
+        valid_dataloader = load_dataloader(config, tokenizer, 'valid')
+        trainer = Trainer(config, model, train_dataloader, valid_dataloader)
+        trainer.train()
     
-    ###PreTrain Discriminator
-    config.batch_size = 2
-    d_train_dataloader = load_dataloader(config, 'sample_train')
-    d_valid_dataloader = load_dataloader(config, 'sample_valid')        
-
-    d_trainer = DisTrainer(config, d_model, d_train_dataloader, d_valid_dataloader)
-    d_trainer.train()
-
-
-
-
-def train(config, g_model, d_model):
-    train_dataloader = load_dataloader(config, 'train')
-    valid_dataloader = load_dataloader(config, 'valid')
-
-    trainer = Trainer(config, g_model, d_model, train_dataloader, valid_dataloader)
-    trainer.train()
-
-
-
-def test(config, g_model, d_model):
-    test_dataloader = load_dataloader(config, 'test')
-    tester = Tester(config, g_model, d_model, test_dataloader)    
-    tester.test()    
-
-
-
-def inference(g_model, tokenizer):
-    g_model.eval()
-    print(f'--- Inference Process Started! ---')
-    print('[ Type "quit" on user input to stop the Process ]')
-    
-    while True:
-        input_seq = input('\nUser Input Sequence >> ').lower()
-
-        #End Condition
-        if input_seq == 'quit':
-            print('\n--- Inference Process has terminated! ---')
-            break        
-
-        #convert user input_seq into model input_ids
-        input_ids = tokenizer(input_seq, return_tensors='pt')['input_ids']
-        output_ids = g_model.generate(input_ids, use_cache=True, 
-                                      max_new_tokens=tokenizer.model_max_length)
-        output_seq = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
-
-        #Search Output Sequence
-        print(f"Model Out Sequence >> {output_seq}")
-
-
-
-def main(mode):
-
-    set_seed(42)
-    config = Config(mode)    
-    tokenizer = LEDTokenizerFast.from_pretrained(config.g_mname)
-    tokenizer.model_max_length = config.max_len
-    setattr(config, 'pad_id', tokenizer.pad_token_id)
-    setattr(config, 'sep_id', tokenizer.sep_token_id)
-
-
-    g_model = load_generator(config)
-    if config.mode != "inference":
-        d_model = load_discriminator(config)
-
-    if config.mode == 'pretrain':
-        pretrain(config, g_model, d_model)
-    elif config.mode == 'train':
-        train(config, g_model, d_model)
     elif config.mode == 'test':
-        test(config, g_model, d_model)
-    elif config.mode == 'inference':
-        inference(g_model, tokenizer)
+        test_dataloader = load_dataloader(config, tokenizer, 'test')
+        tester = Tester(config, model, tokenizer, test_dataloader)
+        tester.test()
     
+    elif config.mode == 'inference':
+        generator = Generator(config, model, tokenizer)
+        generator.inference()
 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('-task', required=True)
     parser.add_argument('-mode', required=True)
+    parser.add_argument('-model', required=True)
+    parser.add_argument('-search', default='greedy', required=False)
     
     args = parser.parse_args()
-    assert args.mode.lower() in ['pretrain', 'train', 'test', 'inference']
-
-    if args.mode == 'train':
-        assert os.path.exists('ckpt/generator_base.pt')
-        assert os.path.exists('ckpt/discriminator_base.pt')
+    assert args.task in ['translation', 'dialogue', 'summarization']
+    assert args.mode in ['train', 'test', 'inference']
+    assert args.model in ['baseline', 'augment', 'generative']
+    assert args.search in ['greedy', 'beam']
     
-    elif args.mode in ['test', 'inference']:
-        assert os.path.exists('ckpt/discriminator.pt')
-        assert os.path.exists('ckpt/generator.pt')
-
-    main(args.mode)
+    main(args)
