@@ -6,18 +6,20 @@ from torch.nn.utils.rnn import pad_sequence
 
 class Dataset(torch.utils.data.Dataset):
 
-    def __init__(self, tokenizer, task, split):
+    def __init__(self, config, tokenizer, split):
         super().__init__()
-        self.augment = config.model == 'augment'
+        self.model_type = config.model_type
         self.tokenizer = tokenizer
-        self.data = self.load_data(task, split)
+        self.data = self.load_data(config.task, split)
 
 
-    @staticmethod
-    def load_data(task, split):
+    def load_data(self, task, split):
         with open(f"data/{task}/{split}.json", 'r') as f:
             data = json.load(f)
-        return data if self.augment else data[::10]
+
+        if self.model_type == 'augment':
+            return data
+        return data[::10]
 
 
     def __len__(self):
@@ -39,12 +41,9 @@ class Collator(object):
 
     def __call__(self, batch):
         x_batch, y_batch = zip(*batch)     
-        x_batch = self.pad_batch(x_batch)
-        y_batch = self.pad_batch(y_batch)
 
-        return {'x': x_batch, 
-                'y': y_batch[:, :-1],
-                'label': y_batch[:, 1:]}
+        return {'x': self.pad_batch(x_batch), 
+                'y': self.pad_batch(y_batch)}
 
 
     def pad_batch(self, batch):
@@ -58,9 +57,9 @@ class Collator(object):
 
 def load_dataloader(config, tokenizer, split):
     return DataLoader(
-        Dataset(tokenizer, config.task, split), 
+        Dataset(config, tokenizer, split), 
         batch_size=config.batch_size, 
-        shuffle=True split == 'train',
+        shuffle=split == 'train',
         collate_fn=Collator(config.pad_id),
         pin_memory=True,
         num_workers=2

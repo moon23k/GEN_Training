@@ -32,21 +32,24 @@ def print_model_desc(model):
 
 
 def load_model(config):
-    model = Transformer(config)
-    
-    init_weights(model)
-    print(f"Initialized {config.model_type} model has loaded")
+    mode = config.mode
+    model_type = config.model_type
 
-    if config.mode != 'train':
-        assert os.path.exists(config.ckpt)
+    model = Transformer(config)
+    init_weights(model)
+    print(f"Initialized {model_type} model has loaded")
+
+    if mode != 'train' or model_type == 'generative':
+        if model_type == 'generative' and mode == 'train':
+            ckpt = f'ckpt/{config.task}/baseline_model.pt'        
+        else:
+            ckpt = config.ckpt
+        assert os.path.exists(ckpt)
         
-        model_state = torch.load(
-            config.ckpt, 
-            map_location=config.device
-        )['model_state_dict']
+        model_state = torch.load(ckpt, map_location=config.device)['model_state_dict']
         
         model.load_state_dict(model_state)
-        print(f"Model states has loaded from {config.ckpt}")       
+        print(f"Model states has loaded from {ckpt}")       
     
     print_model_desc(model)
     return model.to(config.device)

@@ -73,7 +73,6 @@ def load_tokenizer(config):
 
 
 
-
 def main(args):
     set_seed()
     config = Config(args)
@@ -110,5 +109,10 @@ if __name__ == '__main__':
     assert args.mode in ['train', 'test', 'inference']
     assert args.model in ['baseline', 'augment', 'generative']
     assert args.search in ['greedy', 'beam']
-    
+
+    if args.mode == 'train':
+        os.makedirs(f"ckpt/{args.task}", exist_ok=True)
+    else:
+        assert os.path.exists(f'ckpt/{args.task}/{args.model}_model.pt')
+
     main(args)
