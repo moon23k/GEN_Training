@@ -12,6 +12,7 @@ class Tester:
 
         self.task = config.task
         self.bos_id = config.bos_id
+        self.eos_id = config.eos_id
         self.device = config.device
         self.max_len = config.max_len
         self.model_type = config.model_type
@@ -47,19 +48,27 @@ class Tester:
     def predict(self, x):
 
         batch_size = x.size(0)
-        pred = torch.zeros((batch_size, self.max_len))
-        pred = pred.type(torch.LongTensor).to(self.device)
-        pred[:, 0] = self.bos_id
+        pred = torch.zeros((batch_size, 1), dtype=torch.long)
+        pred = pred.fill_(self.bos_id).to(self.device)
 
         e_mask = self.model.pad_mask(x)
-        memory = self.model.encoder(x, e_mask)
+        memory = self.model.encode(x, e_mask)
 
-        for idx in range(1, self.max_len):
+        for idx in range(1, self.max_len+1):
             y = pred[:, :idx]
-            d_out = self.model.decoder(y, memory, e_mask, None)
+            d_out, cache = self.model.decode(
+                y, memory, cache=None, e_mask=e_mask, 
+                d_mask=None, use_cache=False
+            )
 
-            logit = self.model.generator(d_out)
-            pred[:, idx] = logit.argmax(dim=-1)[:, -1]
+            curr_logit = self.model.generator(d_out[:, -1:, :])
+            curr_pred = curr_logit.argmax(dim=-1)
+
+            pred = torch.cat([pred, curr_pred], dim=1)
+
+            #Early Stop Condition
+            if (pred == self.eos_id).sum().item() == batch_size:
+                break
 
         return pred
 
