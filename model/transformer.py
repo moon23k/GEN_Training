@@ -10,13 +10,16 @@ def clones(module, N):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, config, max_len=512):
+    def __init__(self, config):
         super(PositionalEncoding, self).__init__()
         
+        max_len = config.max_len if config.task != 'summarization' else config.max_len * 4
         pe = torch.zeros(max_len, config.emb_dim)
         
         position = torch.arange(0, max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, config.emb_dim, 2) * -(math.log(10000.0) / config.emb_dim))
+        div_term = torch.exp(
+            torch.arange(0, config.emb_dim, 2) * -(math.log(10000.0) / config.emb_dim)
+        )
         
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
@@ -249,12 +252,12 @@ class Transformer(nn.Module):
     
 
     def generative_forward(self, x, y):
-        y, label = self.shift_y(y)
-        
-        batch_size = x.size(0)
-        output_len = y.size(1)
 
-        logit = torch.zeros(batch_size, output_len, self.vocab_size).to(self.device)
+        _, label = self.shift_y(y)
+        batch_size, output_len = label.shape
+        logit = torch.empty(batch_size, output_len, self.vocab_size).to(self.device)
+        
+
         pred = torch.zeros((batch_size, 1), dtype=torch.long)
         pred = pred.fill_(self.bos_id).to(self.device)
 
@@ -279,6 +282,7 @@ class Transformer(nn.Module):
         )        
 
         return self.out
+        
 
 
     def forward(self, x, y):

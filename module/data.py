@@ -17,9 +17,10 @@ class Dataset(torch.utils.data.Dataset):
         with open(f"data/{task}/{split}.json", 'r') as f:
             data = json.load(f)
 
-        if self.model_type == 'augment':
-            return data
-        return data[::10]
+        if split == 'train' and self.model_type != 'augment':    
+            return data[::5]
+
+        return data
 
 
     def __len__(self):
