@@ -120,45 +120,6 @@ def process_dialogue_data(data_volumn):
 
 
 
-#Summarization
-def process_summarization_data(data_volumn):    
-    volumn_cnt = 0
-    corpus, processed = [], []
-    min_len, max_len = 500, 2300
-
-    #Load Original Dataset
-    cnn_data = load_dataset('cnn_dailymail', '3.0.0')
-
-    for split in ['train', 'validation', 'test']:
-        for elem in cnn_data[split]:
-
-            x, y = elem['article'], elem['highlights']
-
-            if min_len < len(x) < max_len:
-                if len(y) < min_len:
-                    
-                    #Lowercase
-                    x, y = x.lower(), y.lower()
-
-                    #Remove unnecessary characters in trg sequence
-                    y = re.sub(r'\n', ' ', y)                 #remove \n
-                    y = re.sub(r"\s([.](?:\s|$))", r'\1', y)  #remove whitespace in front of dot
-
-                    processed.append({'x': x, 'y': y})
-                    corpus.append(x)
-                    corpus.append(y)
-
-                    #End Condition
-                    volumn_cnt += 1
-            if volumn_cnt == data_volumn:
-                break
-
-    with open('data/summarization/corpus.txt', 'w') as f:
-        f.write('\n'.join(corpus))
-    
-    return processed           
-
-
 
 def train_tokenizer(task):
     corpus_path = f'data/{task}/corpus.txt'
@@ -225,10 +186,10 @@ if __name__ == '__main__':
     parser.add_argument('-task', required=True)
     
     args = parser.parse_args()
-    assert args.task in ['all', 'translation', 'dialogue', 'summarization']
+    assert args.task in ['all', 'translation', 'dialogue']
     
     if args.task == 'all':
-        for task in ['translation', 'dialogue', 'summarization']:
+        for task in ['translation', 'dialogue']:
             main(task)
     else: 
         main(args.task)    

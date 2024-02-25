@@ -39,8 +39,8 @@ def load_model(config):
     init_weights(model)
     print(f"Initialized {model_type} model has loaded")
 
-    if mode != 'train' or model_type == 'generative':
-        if model_type == 'generative' and mode == 'train':
+    if mode != 'train' or model_type == 'consecutive':
+        if model_type == 'consecutive' and mode == 'train':
             ckpt = f'ckpt/{config.task}/baseline_model.pt'        
         else:
             ckpt = config.ckpt
