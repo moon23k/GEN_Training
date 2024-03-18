@@ -1,28 +1,34 @@
-## Generative Training
-&nbsp; The Transformer Seq2Seq model for natural language generation typically employs Teacher Forcing during training. 
-While this approach promotes stable learning, it has limitations in improving inference performance since Teacher Forcing is absent during the inference phase.
-
-To address this issue, there are two main approaches. 
-One involves increasing the amount of data to enhance the model's generalization performance. 
-The other approach leverages the same mechanisms used during inference in the training phase to improve inference capabilities.
-
-In this project, we aim to directly assess which of the two methods, increasing the data volume or adopting generative learning, is more effective for three natural language generation tasks. 
-This evaluation is conducted in a scenario where the available data is limited.
+## Intelli GEN
+&nbsp; This repository contains a series of code aimed at enhancing performance through **Intelligent Generative Training** using Transformer model. Typically, Transformers are well-suited for large-scale parallel processing training based on attention mechanism, employing Teacher Forcing during this process. However, during actual inference, they rely solely on predictions from the model's previous time step. This creates a discrepancy between the training and inference processes, making it challenging to improve inference performance. However, applying the same logic during training as in inference would negate the advantages of Transformers. Therefore, there is a need for a more intelligent approach to generative learning. Detailed training strategies are discussed below.
 
 <br><br> 
 
-## Training Methodologies
+## Fine-Tuning Strategy
 
-> **Teacher Forcing Training**
+### 1.&nbsp; Standard&hairsp; Fine-Tuning
 
-Teacher forcing training is the most fundamental training method for Transformer Seq2Seq models used in natural language generation. 
+> Teacher forcing training is the most fundamental training method for Transformer Seq2Seq models used in natural language generation. 
 During the training process, it ensures the stability of learning through Teacher Forcing, employing masking.
 
 <br> 
 
-> **Generative Training**
+### 2.&nbsp; Generative&hairsp; Fine-Tuning
 
-Generative Training is a training approach that follows a self-auto-regressive method without Teacher Forcing. 
+> Generative Training is a training approach that follows a self-auto-regressive method without Teacher Forcing. 
+However, to enhance efficiency during the generation process, it utilizes caching.
+
+<br> 
+
+### 3.&nbsp; Slow Sequence GAN&hairsp; Fine-Tuning
+
+> Generative Training is a training approach that follows a self-auto-regressive method without Teacher Forcing. 
+However, to enhance efficiency during the generation process, it utilizes caching.
+
+<br> 
+
+### 4.&nbsp; Intelli GEN&hairsp; Fine-Tuning
+
+> Generative Training is a training approach that follows a self-auto-regressive method without Teacher Forcing. 
 However, to enhance efficiency during the generation process, it utilizes caching.
 
 <br><br> 
@@ -30,18 +36,20 @@ However, to enhance efficiency during the generation process, it utilizes cachin
 ## Experimental Setups
 
 | Data Setup | Model Setup | Training Setup |
-|---|---|---|
-||||
+| --- | --- | --- |
+|`Dataset:` WMT14 En-De |`Architecture:` Transformer |`Num Epochs:` 10 |
 
 <br><br> 
 
 ## Results
 
-| Model Type | Translation | Dialogue | Summarization |
-|---|---|---|---|
-| Base Line  |  3.29 | - | - |
-| Augmented  | 12.87 | - | - |
-| Generative |  0.0  | - | - |
+| Strategy | BLUE Score | Epoch Time |
+|---|---|---|
+| Baseline     | - | - |
+| Standard Fine-Tuning   | - | - |
+| Generative Fine-Tuning | - | - |
+| SlowGAN Fine-Tuning | - | - |
+| IntelliGEN Fine-Tuning | - | - |
 
 <br><br> 
 
@@ -54,14 +62,13 @@ git clone https://github.com/moon23k/GEN_Training.git
 
 **Setup Dataset and Tokenizer via setup.py file**
 ```
-python3 setup.py -task ['all', 'translation', 'dialogue', 'summarization']
+python3 setup.py
 ```
 
 **Actual Process via run.py file**
 ```
-python3 run.py -task ['translation', 'dialogue', 'summarization']
-               -mode ['train', 'test', 'inference']
-               -model ['baseline', 'scale_up', 'generative']
+python3 run.py -mode ['train', 'finetune', 'test', 'inference']
+               -strategy ['std', 'gen', 'slow', 'intelli']
                -search(Optional) ['greedy', 'beam']
 ```
 
