@@ -1,4 +1,4 @@
-import os, re, json, yaml, argparse
+import os, re, json, yaml
 from datasets import load_dataset
 from tokenizers.models import BPE
 from tokenizers import Tokenizer, normalizers
@@ -9,8 +9,7 @@ from tokenizers.normalizers import NFD, Lowercase, StripAccents
 
 
 
-#NMT
-def process_translation_data(data_volumn):
+def process_data(data_volumn):
     #load original dataset
     nmt_data = load_dataset('wmt14', 'de-en', split='train')['translation']
     
@@ -42,87 +41,17 @@ def process_translation_data(data_volumn):
                 break
 
     #Save Corpus
-    with open('data/translation/corpus.txt', 'w') as f:
+    with open('data/corpus.txt', 'w') as f:
         f.write('\n'.join(corpus))
 
     return processed 
 
 
 
-#Dialog
-def process_dialogue_data(data_volumn):
-    volumn_cnt = 0
-    corpus, processed = [], []
-
-    #Load original Datasets
-    daily_data = load_dataset('daily_dialog')
 
 
-    #Daily-Dialogue Dataset Processing
-    x_data, y_data = [], []
-    for split in ['train', 'validation', 'test']:
-        for dial in daily_data[split]['dialog']:
-            dial_list = []
-            dial_turns = len(dial)
-
-            if max([len(d) for d in dial]) > 300:
-                continue
-            
-            for uttr in dial:
-                _uttr = re.sub(r"\s([?,.!’](?:\s|$))", r'\1', uttr)
-                _uttr = re.sub(r'([’])\s+', r'\1', _uttr).strip().lower()
-                if len(_uttr) > 300:
-                    break
-                dial_list.append(_uttr)
-            
-            if dial_turns < 2:
-                continue
-
-            elif dial_turns == 2:
-                x_data.append(dial_list[0])
-                y_data.append(dial_list[1])
-                continue  #To avoid duplicate on below condition
-
-            #Incase of dial_turns is even
-            elif dial_turns % 2 == 0:
-                x_data.extend(dial_list[0::2])
-                y_data.extend(dial_list[1::2])
-
-                x_data.extend(dial_list[1:-1:2])
-                y_data.extend(dial_list[2::2])
-            
-            #Incase of dial_turns is odds
-            elif dial_turns % 2 == 1:
-                x_data.extend(dial_list[0:-1:2])
-                y_data.extend(dial_list[1::2])
-                
-                x_data.extend(dial_list[1::2])
-                y_data.extend(dial_list[2::2])   
-
-
-    assert len(x_data) == len(y_data)
-    
-    for x, y in zip(x_data, y_data):        
-        corpus.append(x)
-        corpus.append(y)
-        processed.append({'x': x, 'y': y})
-
-        volumn_cnt += 1
-        if volumn_cnt == data_volumn:
-            break        
-
-    
-    #Save Corpus
-    with open('data/dialogue/corpus.txt', 'w') as f:
-        f.write('\n'.join(corpus))    
-
-    return processed
-
-
-
-
-def train_tokenizer(task):
-    corpus_path = f'data/{task}/corpus.txt'
+def train_tokenizer():
+    corpus_path = f'data/corpus.txt'
     assert os.path.exists(corpus_path)
     
     assert os.path.exists('config.yaml')
@@ -143,53 +72,34 @@ def train_tokenizer(task):
         )
 
     tokenizer.train(files=[corpus_path], trainer=trainer)
-    tokenizer.save(f"data/{task}/tokenizer.json")
+    tokenizer.save(f"data/tokenizer.json")
 
 
 
-def save_data(task, data_obj):
+def save_data(data_obj):
     #split data into train/valid/test sets
     train, valid, test = data_obj[:-5100], data_obj[-5100:-100], data_obj[-100:]
     data_dict = {k:v for k, v in zip(['train', 'valid', 'test'], [train, valid, test])}
 
     for key, val in data_dict.items():
-        with open(f'data/{task}/{key}.json', 'w') as f:
+        with open(f'data/{key}.json', 'w') as f:
             json.dump(val, f)        
-        assert os.path.exists(f'data/{task}/{key}.json')
+        assert os.path.exists(f'data/{key}.json')
 
 
 
 
-def main(task):
-    #Prerequisite
-    os.makedirs(f'data/{task}', exist_ok=True)
-
-    #PreProcess Data
+def main():
     data_volumn = 55100
-    if task == 'translation':
-        processed = process_translation_data(data_volumn)
-    elif task == 'dialogue':
-        processed = process_dialogue_data(data_volumn)
-    elif task == 'summarization':
-        processed = process_summarization_data(data_volumn)        
+    processed = process_data(data_volumn)
 
     #Train Tokenizer
-    train_tokenizer(task)
+    train_tokenizer()
 
     #Save Data
-    save_data(task, processed)
+    save_data(processed)
 
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-task', required=True)
-    
-    args = parser.parse_args()
-    assert args.task in ['all', 'translation', 'dialogue']
-    
-    if args.task == 'all':
-        for task in ['translation', 'dialogue']:
-            main(task)
-    else: 
-        main(args.task)    
+if __name__ == '__main__': 
+    main()    

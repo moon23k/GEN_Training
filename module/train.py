@@ -7,12 +7,11 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 class Trainer:
-    def __init__(self, config, model, train_dataloader, valid_dataloader):
+    def __init__(self, config, **kwargs):
         super(Trainer, self).__init__()
 
-        self.model = model
-        self.train_dataloader = train_dataloader
-        self.valid_dataloader = valid_dataloader
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
         self.clip = config.clip
         self.device = config.device
@@ -22,13 +21,14 @@ class Trainer:
         self.patience = config.patience
         self.device_type = config.device_type
         self.scaler = torch.cuda.amp.GradScaler()
-        self.iters_to_accumulate = config.iters_to_accumulate        
+        self.iters_to_accumulate = config.iters_to_accumulate
 
+        self.criterion = nn.CrossEntropyLoss()
         self.optimizer = AdamW(self.model.parameters(), lr=config.lr)
         self.lr_scheduler = ReduceLROnPlateau(self.optimizer, patience=2)
 
         self.ckpt = config.ckpt
-        self.record_path = self.ckpt.replace('model.pt', 'report.json')
+        self.record_path = self.ckpt.replace('model.pt', 'log.json')
 
 
 
@@ -115,6 +115,23 @@ class Trainer:
 
 
 
+    def get_loss(self, logit, label=None):
+        
+        #std training, gen trianing loss
+        if label is not None:
+            loss = self.criterion(
+                logit.contiguous().view(-1, self.vocab_size), 
+                label.contiguous().view(-1)
+            )        
+        
+        #gan training loss
+        else
+            loss = self.discriminator(logit)
+            loss = (loss > 0.5).sum()
+
+        return loss
+
+
     def train_epoch(self):
         self.model.train()
         tot_len = len(self.train_dataloader)
@@ -123,10 +140,14 @@ class Trainer:
 
         for idx, batch in enumerate(self.train_dataloader):
             idx += 1
-            batch = {k: v.to(self.device) for k, v in batch.items()}
+            x, y = batch['x'].to(self.device), batch['y'].to(self.device)
+
+            label = y[] if self.mode != 'gan_train' else None
+            y = y[]
 
             with torch.autocast(device_type=self.device_type, dtype=torch.float16):
-                loss = self.model(**batch).loss               
+                logit = self.model(x, y)
+                loss = self.get_loss(logit, label)        
                 loss = loss / self.iters_to_accumulate
             
             #Backward Loss
@@ -154,10 +175,15 @@ class Trainer:
         
         with torch.no_grad():
             for batch in self.valid_dataloader:
-                batch = {k: v.to(self.device) for k, v in batch.items()}
+
+                x, y = batch['x'].to(self.device), batch['y'].to(self.device)
+
+                label = y[] if self.mode != 'gan_train' else None
+                y = y[]
                 
                 with torch.autocast(device_type=self.device_type, dtype=torch.float16):
-                    loss = self.model(**batch).loss
+                    logit = self.model(x, y)
+                    loss = self.get_loss(logit, label)
                     epoch_loss += loss.item()
         
         return round(epoch_loss / len(self.valid_dataloader), 3)

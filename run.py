@@ -37,13 +37,11 @@ class Config(object):
                 for key, val in params[group].items():
                     setattr(self, key, val)
 
-        self.task = args.task
         self.mode = args.mode
-        self.model_type = args.model
         self.search_method = args.search
 
-        self.ckpt = f"ckpt/{self.task}/{self.model_type}_model.pt"
-        self.tokenizer_path = f'data/{self.task}/tokenizer.json'
+        self.ckpt = f"ckpt/{self.model_type}_model.pt"
+        self.tokenizer_path = f'data/tokenizer.json'
 
         use_cuda = torch.cuda.is_available()
         self.device_type = 'cuda' \
@@ -80,7 +78,7 @@ def main(args):
     model = load_model(config)
     tokenizer = load_tokenizer(config)
 
-    if config.mode == 'train':
+    if 'train' in config.mode:
         train_dataloader = load_dataloader(config, tokenizer, 'train')
         valid_dataloader = load_dataloader(config, tokenizer, 'valid')
         trainer = Trainer(config, model, train_dataloader, valid_dataloader)
@@ -96,34 +94,20 @@ def main(args):
         generator.inference()
 
 
-'''
-학습
-테스트
-
-테스트 결과를 통해
-약점파악
-유사한 데이터 재 탐색, 데이터 재구축
-
-해당 데이터에 대한 생성적 학
-'''
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-task', required=True)
     parser.add_argument('-mode', required=True)
-    parser.add_argument('-model', required=True)
     parser.add_argument('-search', default='greedy', required=False)
     
     args = parser.parse_args()
-    assert args.task.lower() in ['translation', 'dialogue']
-    assert args.mode.lower() in ['train', 'test', 'inference']
-    assert args.model.lower() in ['baseline', 'augment', 'generative', 'consecutive']
+    assert args.mode.lower() in ['std_train', 'gen_train', 'gan_train', 'test', 'inference']
     assert args.search.lower() in ['greedy', 'beam']
 
-    if args.mode == 'train':
-        os.makedirs(f"ckpt/{args.task}", exist_ok=True)
-    else:
-        assert os.path.exists(f'ckpt/{args.task}/{args.model}_model.pt')
+    if args.mode == 'gen_train':
+        assert os.path.exists(f'ckpt/std_trained_model.pt')
+    elif args.mode == 'gan_train':
+        assert os.path.exists(f'ckpt/gen_trained_model.pt')
 
     main(args)

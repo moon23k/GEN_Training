@@ -1,6 +1,6 @@
 import torch, os
 import torch.nn as nn
-from model import Transformer
+from model import Generator, Discriminator
 
 
 

@@ -1,1 +1,2 @@
-from .transformer import Transformer
+from .generator import Generator
+from .discriminator import Discriminator
