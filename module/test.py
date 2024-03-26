@@ -10,35 +10,13 @@ class Tester:
         self.tokenizer = tokenizer
         self.dataloader = test_dataloader
 
-        self.task = config.task
         self.bos_id = config.bos_id
         self.eos_id = config.eos_id
         self.device = config.device
         self.max_len = config.max_len
-        self.model_type = config.model_type
         
-        self.metric_name = 'BLEU' if self.task == 'translation' else 'ROUGE'
-        self.metric_module = evaluate.load(self.metric_name.lower())
+        self.metric_module = evaluate.load('BLEU')
         
-
-
-    def test(self):
-        score = 0.0         
-        self.model.eval()
-
-        with torch.no_grad():
-            for batch in self.dataloader:
-                x = batch['x'].to(self.device)
-                y = self.tokenize(batch['y'])
-
-                pred = self.predict(x)
-                pred = self.tokenize(pred)
-                
-                score += self.evaluate(pred, y)
-
-        txt = f"TEST Result on {self.task.upper()} with {self.model_type.upper()} model"
-        txt += f"\n-- Score: {round(score/len(self.dataloader), 2)}\n"
-        print(txt)
 
 
     def tokenize(self, batch):
@@ -75,17 +53,30 @@ class Tester:
 
 
     def evaluate(self, pred, label):
-        #For NMT Evaluation
-        if self.task == 'translation':
-            score = self.metric_module.compute(
-                predictions=pred, 
-                references =[[l] for l in label]
-            )['bleu']
-        #For Dialg & Sum Evaluation
-        else:
-            score = self.metric_module.compute(
-                predictions=pred, 
-                references =[[l] for l in label]
-            )['rouge2']
+        score = self.metric_module.compute(
+            predictions=pred, 
+            references =[[l] for l in label]
+        )['bleu']
+
 
         return score * 100
+
+
+
+    def test(self):
+        score = 0.0         
+        self.model.eval()
+
+        with torch.no_grad():
+            for batch in self.dataloader:
+                x = batch['x'].to(self.device)
+                y = self.tokenize(batch['y'])
+
+                pred = self.predict(x)
+                pred = self.tokenize(pred)
+                
+                score += self.evaluate(pred, y)
+
+        txt = f"TEST Result on {self.model_type.upper()} model"
+        txt += f"\n-- Score: {round(score/len(self.dataloader), 2)}\n"
+        print(txt)        

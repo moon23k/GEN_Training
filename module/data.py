@@ -8,17 +8,14 @@ class Dataset(torch.utils.data.Dataset):
 
     def __init__(self, config, tokenizer, split):
         super().__init__()
-        self.model_type = config.model_type
+
         self.tokenizer = tokenizer
         self.data = self.load_data(config.task, split)
 
 
-    def load_data(self, task, split):
-        with open(f"data/{task}/{split}.json", 'r') as f:
+    def load_data(self, split):
+        with open(f"data/{split}.json", 'r') as f:
             data = json.load(f)
-
-        if split == 'train' and self.model_type != 'augment':    
-            return data[::5]
 
         return data
 

@@ -31,25 +31,45 @@ def print_model_desc(model):
 
 
 
-def load_model(config):
+def load_generator(config):
     mode = config.mode
-    model_type = config.model_type
+    strategy = config.strategy
 
-    model = Transformer(config)
+    model = Generator(config)
     init_weights(model)
-    print(f"Initialized {model_type} model has loaded")
+    print("Initialized Generator has loaded")
 
-    if mode != 'train' or model_type == 'consecutive':
-        if model_type == 'consecutive' and mode == 'train':
-            ckpt = f'ckpt/{config.task}/baseline_model.pt'        
-        else:
-            ckpt = config.ckpt
-        assert os.path.exists(ckpt)
+    if mode == 'train':
+        if strategy == 'std':
+            print_model_desc(model)
+            return model
+        elif strategy == 'gen':
+            ckpt = 'ckpt/std_model.pt'
+        elif strategy == 'gan':
+            ckpt = 'ckpt/gen_model.pt'
+    elif mode != 'train':
+        ckpt = f"ckpt/{strategy}_model.pt"
         
-        model_state = torch.load(ckpt, map_location=config.device)['model_state_dict']
-        
-        model.load_state_dict(model_state)
-        print(f"Model states has loaded from {ckpt}")       
+    model_state = torch.load(ckpt, map_location=config.device)['model_state_dict']    
+    model.load_state_dict(model_state)
+    print(f"Model states has loaded from {ckpt}")
     
     print_model_desc(model)
     return model.to(config.device)
+
+
+
+def load_discriminator(config):
+    model = Discriminator(config)
+    init_weights(model)
+    print("Initialized Discriminator model has loaded")
+
+
+    ckpt = 'ckpt/discriminator.pt'
+    if os.path.exists(ckpt):
+        model_state = torch.load(ckpt, map_location=config.device)['model_state_dict']        
+        model.load_state_dict(model_state)
+        print(f"Model states has loaded from {ckpt}")                   
+
+    print_model_desc(model)
+    return model.to(config.device)    

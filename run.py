@@ -5,7 +5,8 @@ from tokenizers.processors import TemplateProcessing
 
 from module import (
     load_dataloader,
-    load_model,
+    load_generator,
+    load_discriminator,
     Trainer,
     Tester,
     Generator
@@ -38,9 +39,10 @@ class Config(object):
                     setattr(self, key, val)
 
         self.mode = args.mode
+        self.strategy = args.strategy
         self.search_method = args.search
 
-        self.ckpt = f"ckpt/{self.model_type}_model.pt"
+        self.ckpt = f"ckpt/{self.strategy}_model.pt"
         self.tokenizer_path = f'data/tokenizer.json'
 
         use_cuda = torch.cuda.is_available()
@@ -73,22 +75,44 @@ def load_tokenizer(config):
 
 
 def main(args):
+    
     set_seed()
+
     config = Config(args)
-    model = load_model(config)
     tokenizer = load_tokenizer(config)
 
+    generator = load_generator(config)
+    discriminator = load_discriminator(config) if config.mode == 'gan_train' else None
+    
+
+    #For Training Process
     if 'train' in config.mode:
+        if config.mode == 'gan_train':
+            sampler = Sampler(config, generator, tokenizer)
+            sampler.sample()            
+
         train_dataloader = load_dataloader(config, tokenizer, 'train')
         valid_dataloader = load_dataloader(config, tokenizer, 'valid')
-        trainer = Trainer(config, model, train_dataloader, valid_dataloader)
+        
+        trainer_kwargs = {
+            'generator': generator,
+            'discriminator': discriminator,
+            'train_dataloader': train_dataloader,
+            'valid_dataloader': valid_dataloader
+        }
+
+        trainer = Trainer(config, trainer_kwargs)
         trainer.train()
+
     
+    #For Testing Process
     elif config.mode == 'test':
         test_dataloader = load_dataloader(config, tokenizer, 'test')
         tester = Tester(config, model, tokenizer, test_dataloader)
         tester.test()
     
+
+    #For Inference Process
     elif config.mode == 'inference':
         generator = Generator(config, model, tokenizer)
         generator.inference()
@@ -99,15 +123,24 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-mode', required=True)
+    parser.add_argument('-strategy', default='std', required=False)
     parser.add_argument('-search', default='greedy', required=False)
     
     args = parser.parse_args()
     assert args.mode.lower() in ['std_train', 'gen_train', 'gan_train', 'test', 'inference']
+    assert args.strategy.lower() in ['std', 'gen', 'gan']
     assert args.search.lower() in ['greedy', 'beam']
 
-    if args.mode == 'gen_train':
-        assert os.path.exists(f'ckpt/std_trained_model.pt')
-    elif args.mode == 'gan_train':
-        assert os.path.exists(f'ckpt/gen_trained_model.pt')
-
+    if 'train' in args.mode:
+        if args.mode == 'gen_train':
+            assert os.path.exists(f'ckpt/std_model.pt')
+        elif args.mode == 'gan_train':
+            assert os.path.exists(f'ckpt/gen_model.pt')
+    else:
+        if args.strategy == 'std':
+            assert os.path.exists(f'ckpt/std_model.pt')
+        elif args.strategy == 'gen':
+            assert os.path.exists(f'ckpt/gen_model.pt')
+        elif args.strategy == 'gan':
+            assert os.path.exists(f'ckpt/gan_model.pt')            
     main(args)

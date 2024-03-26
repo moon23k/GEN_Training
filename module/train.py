@@ -125,7 +125,7 @@ class Trainer:
             )        
         
         #gan training loss
-        else
+        else:
             loss = self.discriminator(logit)
             loss = (loss > 0.5).sum()
 
@@ -142,8 +142,8 @@ class Trainer:
             idx += 1
             x, y = batch['x'].to(self.device), batch['y'].to(self.device)
 
-            label = y[] if self.mode != 'gan_train' else None
-            y = y[]
+            label = y[:, 1:] if self.mode != 'gan_train' else None
+            y = y[:, :-1]
 
             with torch.autocast(device_type=self.device_type, dtype=torch.float16):
                 logit = self.model(x, y)

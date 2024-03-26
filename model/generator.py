@@ -92,9 +92,9 @@ class Decoder(nn.TransformerDecoder):
 
 
 
-class Transformer(nn.Module):
+class Generator(nn.Module):
     def __init__(self, config):
-        super(Transformer, self).__init__()
+        super(Generator, self).__init__()
 
         self.bos_id = config.bos_id
         self.eos_id = config.eos_id
@@ -152,9 +152,7 @@ class Transformer(nn.Module):
         return x, cache        
         
 
-    def standard_forward(self, x, y):
-        y, label = self.shift_y(y)
-        
+    def standard_forward(self, x, y):        
         e_mask = self.pad_mask(x)
         d_mask = self.dec_mask(y)
 
@@ -168,8 +166,7 @@ class Transformer(nn.Module):
 
     def generative_forward(self, x, y):
 
-        _, label = self.shift_y(y)
-        batch_size, output_len = label.shape
+        batch_size, output_len = y.shape
         logit = torch.empty(batch_size, output_len, self.vocab_size).to(self.device)
         
 

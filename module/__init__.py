@@ -3,3 +3,4 @@ from .model import load_model
 from .train import Trainer
 from .test import Tester
 from .generate import Generator
+from .sampling import Sampler
