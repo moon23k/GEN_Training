@@ -27,4 +27,5 @@ train:
     early_stop: 1
     patience: 3
     clip: 1
+    iters_to_generate: 10
     iters_to_accumulate: 4

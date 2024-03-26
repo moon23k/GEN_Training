@@ -7,20 +7,25 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 class Trainer:
-    def __init__(self, config, **kwargs):
+    def __init__(self, config, kwargs):
         super(Trainer, self).__init__()
 
         for key, value in kwargs.items():
             setattr(self, key, value)
 
+        self.model = self.generator if self.discriminator is None else self.discriminator
+
+        self.mode = config.mode
         self.clip = config.clip
         self.device = config.device
+        self.strategy = config.strategy
         self.n_epochs = config.n_epochs
         self.vocab_size = config.vocab_size
         self.early_stop = config.early_stop
         self.patience = config.patience
         self.device_type = config.device_type
         self.scaler = torch.cuda.amp.GradScaler()
+        self.iters_to_generate = config.iters_to_generate
         self.iters_to_accumulate = config.iters_to_accumulate
 
         self.criterion = nn.CrossEntropyLoss()
@@ -28,7 +33,7 @@ class Trainer:
         self.lr_scheduler = ReduceLROnPlateau(self.optimizer, patience=2)
 
         self.ckpt = config.ckpt
-        self.record_path = self.ckpt.replace('model.pt', 'log.json')
+        self.record_path = self.ckpt.replace('model.pt', 'report.json')
 
 
 
@@ -117,14 +122,14 @@ class Trainer:
 
     def get_loss(self, logit, label=None):
         
-        #std training, gen trianing loss
+        #Getting STD & GEN trianing loss
         if label is not None:
             loss = self.criterion(
                 logit.contiguous().view(-1, self.vocab_size), 
                 label.contiguous().view(-1)
             )        
         
-        #gan training loss
+        #Getting GAN training loss
         else:
             loss = self.discriminator(logit)
             loss = (loss > 0.5).sum()
@@ -145,8 +150,13 @@ class Trainer:
             label = y[:, 1:] if self.mode != 'gan_train' else None
             y = y[:, :-1]
 
+
+            is_generative = False
+            if self.strategy != 'std' and not (idx % self.iters_to_generate):
+                is_generative = True
+
             with torch.autocast(device_type=self.device_type, dtype=torch.float16):
-                logit = self.model(x, y)
+                logit = self.model(x, y, is_generative)
                 loss = self.get_loss(logit, label)        
                 loss = loss / self.iters_to_accumulate
             
@@ -178,8 +188,8 @@ class Trainer:
 
                 x, y = batch['x'].to(self.device), batch['y'].to(self.device)
 
-                label = y[] if self.mode != 'gan_train' else None
-                y = y[]
+                label = y[:, 1:] if self.mode != 'gan_train' else None
+                y = y[:, :-1]
                 
                 with torch.autocast(device_type=self.device_type, dtype=torch.float16):
                     logit = self.model(x, y)

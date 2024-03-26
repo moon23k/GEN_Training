@@ -4,7 +4,7 @@ from module import load_dataloader
 
 
 class Sampler(object):
-	def __init__(config, generator, tokenizer):
+	def __init__(self, config, generator, tokenizer):
 
 		self.generator = generator
 
@@ -29,8 +29,8 @@ class Sampler(object):
 					pred = self.generator.generate(x)
 
 				for p, l in zip(pred, label):
-					samples.append('x': p, 'y': 0)
-					samples.append('x': l, 'y': 1)				
+					samples.append({'x': p, 'y': 0})
+					samples.append({'x': l, 'y': 1})				
 
 		return samples
 
@@ -45,6 +45,6 @@ class Sampler(object):
 		valid_samples = self.generate_sample(self.valid_dataloader)
 		test_samples = self.generate_sample(self.test_dataloader)
 
-		save_sample(train_samples, self.sample_train_ckpt)
-		save_sample(valid_samples, self.sample_valid_ckpt)
-		save_sample(test_samples, self.sample_test_ckpt)
+		self.save_sample(train_samples, self.sample_train_ckpt)
+		self.save_sample(valid_samples, self.sample_valid_ckpt)
+		self.save_sample(test_samples, self.sample_test_ckpt)

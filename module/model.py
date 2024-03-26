@@ -33,22 +33,20 @@ def print_model_desc(model):
 
 def load_generator(config):
     mode = config.mode
-    strategy = config.strategy
 
     model = Generator(config)
     init_weights(model)
     print("Initialized Generator has loaded")
 
-    if mode == 'train':
-        if strategy == 'std':
-            print_model_desc(model)
-            return model
-        elif strategy == 'gen':
-            ckpt = 'ckpt/std_model.pt'
-        elif strategy == 'gan':
-            ckpt = 'ckpt/gen_model.pt'
+    if mode == 'std_train':
+        print_model_desc(model)
+        return model.to(config.device)
+    elif mode == 'gen_train':
+        ckpt = 'ckpt/std_model.pt'
+    elif mode == 'gan_train':
+        ckpt = 'ckpt/gen_model.pt'
     elif mode != 'train':
-        ckpt = f"ckpt/{strategy}_model.pt"
+        ckpt = f"ckpt/{config.strategy}_model.pt"
         
     model_state = torch.load(ckpt, map_location=config.device)['model_state_dict']    
     model.load_state_dict(model_state)

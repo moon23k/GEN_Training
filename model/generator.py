@@ -100,9 +100,9 @@ class Generator(nn.Module):
         self.eos_id = config.eos_id
         self.pad_id = config.pad_id
 
+        self.mode = config.mode
         self.device = config.device
         self.max_len = config.max_len
-        self.model_type = config.model_type
         self.vocab_size = config.vocab_size
 
         self.enc_emb = Embeddings(config)
@@ -191,8 +191,8 @@ class Generator(nn.Module):
         
 
     #here to be some conditional stats for generative forwards
-    def forward(self, x, y):
-        if self.mode != 'std_train':
+    def forward(self, x, y, is_generative=False):
+        if is_generative:
             return self.generative_forward(x, y)
         return self.standard_forward(x, y)
 

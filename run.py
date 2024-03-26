@@ -41,9 +41,18 @@ class Config(object):
         self.mode = args.mode
         self.strategy = args.strategy
         self.search_method = args.search
-
-        self.ckpt = f"ckpt/{self.strategy}_model.pt"
         self.tokenizer_path = f'data/tokenizer.json'
+
+
+        if self.mode in ['gen_train', 'gan_train']:
+            self.lr *= 0.5
+
+
+        if 'train' in self.mode:
+            self.ckpt = f"ckpt/{self.mode[:3]}_model.pt"
+        else:
+            self.ckpt = f"ckpt/{self.strategy}_model.pt"
+        
 
         use_cuda = torch.cuda.is_available()
         self.device_type = 'cuda' \
@@ -108,13 +117,13 @@ def main(args):
     #For Testing Process
     elif config.mode == 'test':
         test_dataloader = load_dataloader(config, tokenizer, 'test')
-        tester = Tester(config, model, tokenizer, test_dataloader)
+        tester = Tester(config, generator, tokenizer, test_dataloader)
         tester.test()
     
 
     #For Inference Process
     elif config.mode == 'inference':
-        generator = Generator(config, model, tokenizer)
+        generator = Generator(config, generator, tokenizer)
         generator.inference()
 
 

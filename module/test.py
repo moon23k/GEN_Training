@@ -9,18 +9,26 @@ class Tester:
         self.model = model
         self.tokenizer = tokenizer
         self.dataloader = test_dataloader
+        self.metric_module = evaluate.load('bleu')
 
         self.bos_id = config.bos_id
         self.eos_id = config.eos_id
         self.device = config.device
         self.max_len = config.max_len
+
+        model_type = {
+            'std': 'Standard Trained',
+            'gen': 'Generative Fine-Tuned',
+            'gan': 'SeqGAN Fine-Tuned'
+        }
+        self.model_type = model_type[config.strategy]
         
-        self.metric_module = evaluate.load('BLEU')
-        
+
 
 
     def tokenize(self, batch):
         return [self.tokenizer.decode(x) for x in batch.tolist()]
+
 
 
     def predict(self, x):
@@ -58,7 +66,6 @@ class Tester:
             references =[[l] for l in label]
         )['bleu']
 
-
         return score * 100
 
 
@@ -77,6 +84,6 @@ class Tester:
                 
                 score += self.evaluate(pred, y)
 
-        txt = f"TEST Result on {self.model_type.upper()} model"
+        txt = f"TEST Result on {self.model_type} model"
         txt += f"\n-- Score: {round(score/len(self.dataloader), 2)}\n"
         print(txt)        
