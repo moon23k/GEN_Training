@@ -13,8 +13,6 @@ class Trainer:
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-        self.model = self.generator if self.discriminator is None else self.discriminator
-
         self.mode = config.mode
         self.clip = config.clip
         self.device = config.device
@@ -28,6 +26,7 @@ class Trainer:
         self.iters_to_generate = config.iters_to_generate
         self.iters_to_accumulate = config.iters_to_accumulate
 
+        self.model = self.discriminator if self.discriminative else self.generator
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = AdamW(self.model.parameters(), lr=config.lr)
         self.lr_scheduler = ReduceLROnPlateau(self.optimizer, patience=2)
@@ -53,7 +52,27 @@ class Trainer:
             >> Train Loss: {train_loss:>{max_len}}  |  Valid Loss: {valid_loss:>{max_len}}
             >> GPU Memory: {gpu_memory:>{max_len}}  |  Max Memory: {max_memory:>{max_len}}\n"""
         print(txt.replace(' '* 11, ''))
-        
+
+
+
+    def get_loss(self, output, label=None):
+        #Getting STD & GEN trianing loss
+        if self.mode in ['std_train', 'gen_train']:
+            loss = self.criterion(
+                output.contiguous().view(-1, self.vocab_size), 
+                label.contiguous().view(-1)
+            )        
+
+        #Getting Discriminative & GAN training loss
+        else:
+            if self.discriminative:
+                loss = output.loss
+            else:
+                _label = torch.zeros(output.size(0)).to(self.device)
+                loss = 1 - self.discriminator(output, _label).loss
+
+        return loss
+
 
 
     def train(self):
@@ -120,21 +139,32 @@ class Trainer:
 
 
 
-    def get_loss(self, logit, label=None):
-        
-        #Getting STD & GEN trianing loss
-        if label is not None:
-            loss = self.criterion(
-                logit.contiguous().view(-1, self.vocab_size), 
-                label.contiguous().view(-1)
-            )        
-        
-        #Getting GAN training loss
-        else:
-            loss = self.discriminator(logit)
-            loss = (loss > 0.5).sum()
+    def process_model_inputs(self, batch):
+        x = batch['x'].to(self.device)
+        y = batch['y'].to(self.device)
 
-        return loss
+
+        if self.discriminative:
+            model_kwargs = {
+                'x': x,
+                'y': batch['y'].to(self.device),
+                'label': None
+            }        
+        else:
+            if self.mode == 'gan_train':
+                model_kwargs = {
+                    'x': x,
+                    'y': torch.zeros(x.size(0)).to(self.device),
+                    'label': None
+                }
+            else:
+                model_kwargs = {
+                    'x': x,
+                    'y': torch.zeros(x.size(0)).to(self.device),
+                    'label': None
+                }                      
+        return model_kwargs
+
 
 
     def train_epoch(self):
@@ -147,17 +177,23 @@ class Trainer:
             idx += 1
             x, y = batch['x'].to(self.device), batch['y'].to(self.device)
 
-            label = y[:, 1:] if self.mode != 'gan_train' else None
-            y = y[:, :-1]
+            if self.discriminative:
+                label = y
+            if self.mode != 'gan_train':
+                label = y[:, 1:]
+                y = y[:, :-1]
+            if self.mode == 'gan_train':
+                label = torch.zeros(x.size(0)).to(self.device)
 
+            model_kwargs = self.process_model_inputs(batch)
+            model_kwargs['is_generative'] = False
 
-            is_generative = False
             if self.strategy != 'std' and not (idx % self.iters_to_generate):
-                is_generative = True
+                model_kwargs['is_generative'] = True
 
             with torch.autocast(device_type=self.device_type, dtype=torch.float16):
-                logit = self.model(x, y, is_generative)
-                loss = self.get_loss(logit, label)        
+                logit = self.model(model_kwargs)
+                loss = self.get_loss(logit, model_kwargs['label'])
                 loss = loss / self.iters_to_accumulate
             
             #Backward Loss

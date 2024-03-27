@@ -165,10 +165,8 @@ class Generator(nn.Module):
     
 
     def generative_forward(self, x, y):
-
         batch_size, output_len = y.shape
         logit = torch.empty(batch_size, output_len, self.vocab_size).to(self.device)
-        
 
         pred = torch.zeros((batch_size, 1), dtype=torch.long)
         pred = pred.fill_(self.bos_id).to(self.device)
@@ -195,4 +193,32 @@ class Generator(nn.Module):
         if is_generative:
             return self.generative_forward(x, y)
         return self.standard_forward(x, y)
+
+
+
+    def cache_generate(self, x, y=None):
+
+        batch_size = x.size(0)
+        max_len = self.max_len if y is None else y.size(1)
+
+
+        pred = torch.zeros((batch_size, 1), dtype=torch.long)
+        pred = pred.fill_(self.bos_id).to(self.device)
+
+
+        cache = None
+        e_mask = self.pad_mask(x)
+        memory = self.encode(x, e_mask)
+
+
+        for idx in range(1, max_len):
+            y = pred[:, :idx]
+            d_out, cache = self.decode(y, memory, cache, e_mask, use_cache=True)
+            last_token = self.generator(d_out[:, -1:, :]).argmax(dim=-1)
+            pred = torch.cat([pred, last_token], dim=1)
+            
+            if (pred == self.eos_id).sum().item() == batch_size:
+                break
+
+        return pred
 

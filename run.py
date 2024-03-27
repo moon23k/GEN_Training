@@ -8,6 +8,7 @@ from module import (
     load_generator,
     load_discriminator,
     Trainer,
+    Sampler,
     Tester,
     Generator
 )
@@ -41,12 +42,11 @@ class Config(object):
         self.mode = args.mode
         self.strategy = args.strategy
         self.search_method = args.search
+        self.discriminative = False
         self.tokenizer_path = f'data/tokenizer.json'
-
 
         if self.mode in ['gen_train', 'gan_train']:
             self.lr *= 0.5
-
 
         if 'train' in self.mode:
             self.ckpt = f"ckpt/{self.mode[:3]}_model.pt"
@@ -81,6 +81,40 @@ def load_tokenizer(config):
     return tokenizer
 
 
+def gan_setup(config, generator, discriminator, tokenizer):
+    print('--- Setting up process for GAN Fine-Tuning has started...')
+
+    #change settings
+    config.discriminative=True
+    generator.eval()
+
+    #Sampling
+    sampler = Sampler(config, generator, tokenizer)
+    sampler.sample()
+
+    #Discriminator Training
+    train_dataloader = load_dataloader(config, tokenizer, 'train')
+    valid_dataloader = load_dataloader(config, tokenizer, 'valid')
+    test_dataloader = load_dataloader(config, tokenizer, 'test')
+
+    training_kwargs = {
+        'generator': generator,
+        'discriminator': discriminator,
+        'train_dataloader': train_dataloader,
+        'valid_dataloader': valid_dataloader,
+    }
+    trainer = Trainer(config, training_kwargs)
+    trainer.ckpt = 'ckpt/discriminator.pt'
+    trainer.train()
+
+    #Discriminator Test
+    tester = Tester(config, discriminator)
+    tester.test()
+    print('--- Setting up process for GAN Fine-Tuning has finished!\n')
+
+    #revert generator to train mode
+    config.discriminative=False
+    generator.train()
 
 
 def main(args):
@@ -96,9 +130,8 @@ def main(args):
 
     #For Training Process
     if 'train' in config.mode:
-        if config.mode == 'gan_train':
-            sampler = Sampler(config, generator, tokenizer)
-            sampler.sample()            
+        if config.mode == 'gan_train' and not os.path.exists(f'ckpt/discriminator.pt'):
+            gan_setup(config, generator, discriminator, tokenizer)        
 
         train_dataloader = load_dataloader(config, tokenizer, 'train')
         valid_dataloader = load_dataloader(config, tokenizer, 'valid')
